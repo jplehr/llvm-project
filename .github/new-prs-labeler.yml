@@ -244,7 +244,27 @@ tools:llvm-mca:
   - llvm/lib/MCA/**/*
 
 openmp:
+  - clang/lib/Headers/openmp_wrappers/*
+  - clang/lib/CodeGen/CGOpenMPRuntime.cpp
+  - clang/lib/CodeGen/CGOpenMPRuntime.h
+  - clang/lib/CodeGen/CGOpenMPRuntimeGPU.cpp
+  - clang/lib/CodeGen/CGOpenMPRuntimeGPU.h
+  - clang/lib/Sema/SemaOpenMP.cpp
+  - clang/test/OpenMP/*
+  - flang/test/**/OpenMP/*
+  - flang/lib/Lower/OpenMP.cpp
+  - flang/lib/Semantics/resolve-directives.cpp
+  - flang/lib/Semantics/check-omp-structure.cpp
+  - flang/lib/Optimizer/Transforms/OMP*
+  - flang/test/Fir/convert-to-llvm-openmp-and-fir.fir
+  - flang/test/Lower/OpenMP/*
+  - flang/test/Transforms/omp*
   - mlir/**/OpenMP/*
+  - mlir/test/Target/LLVMIR/openmp*
+  - llvm/lib/Frontend/OpenMP/*
+  - llvm/include/llvm/Frontend/OpenMP/*
+  - llvm/unittests/Frontend/OpenMP*
+  - llvm/test/Transforms/OpenMP/*
   - openmp/**
 
 PGO:
