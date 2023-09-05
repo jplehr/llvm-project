@@ -244,13 +244,24 @@ tools:llvm-mca:
   - llvm/lib/MCA/**/*
 
 openmp:
+  - clang/include/clang/Basic/OpenMP*
+  - clang/include/clang/AST/OpenMPClause.h
+  - clang/include/clang/AST/DeclOpenMP.h
+  - clang/include/clang/AST/ExprOpenMP.h
+  - clang/include/clang/AST/StmtOpenMP.h
+  - clang/lib/AST/DeclOpenMP.cpp
+  - clang/lib/AST/OpenMPClause.cpp
+  - clang/lib/AST/StmtOpenMP.cpp
   - clang/lib/Headers/openmp_wrappers/*
-  - clang/lib/CodeGen/CGOpenMPRuntime.cpp
-  - clang/lib/CodeGen/CGOpenMPRuntime.h
-  - clang/lib/CodeGen/CGOpenMPRuntimeGPU.cpp
-  - clang/lib/CodeGen/CGOpenMPRuntimeGPU.h
+  - clang/lib/Parse/ParseOpenMP.cpp
+  - clang/lib/Basic/OpenMPKinds.cpp
+  - clang/lib/Driver/ToolChains/AMDGPUOpenMP.cpp
+  - clang/lib/Driver/ToolChains/AMDGPUOpenMP.h
+  - clang/lib/CodeGen/CgStmtOpenMP.cpp
+  - clang/lib/CodeGen/CGOpenMP*
   - clang/lib/Sema/SemaOpenMP.cpp
   - clang/test/OpenMP/*
+  - clang/test/AST/ast-dump-openmp-*
   - flang/test/**/OpenMP/*
   - flang/lib/Lower/OpenMP.cpp
   - flang/lib/Semantics/resolve-directives.cpp
@@ -262,7 +273,9 @@ openmp:
   - mlir/**/OpenMP/*
   - mlir/test/Target/LLVMIR/openmp*
   - llvm/lib/Frontend/OpenMP/*
+  - llvm/lib/Transforms/IPO/OpenMPOpt.cpp
   - llvm/include/llvm/Frontend/OpenMP/*
+  - llvm/include/llvm/Transforms/IPO/OpenMPOpt.h
   - llvm/unittests/Frontend/OpenMP*
   - llvm/test/Transforms/OpenMP/*
   - openmp/**
