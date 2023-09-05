@@ -243,6 +243,10 @@ tools:llvm-mca:
   - llvm/include/llvm/MCA/**/*
   - llvm/lib/MCA/**/*
 
+openmp:
+  - mlir/**/OpenMP/*
+  - openmp/**
+
 PGO:
   - llvm/lib/Transforms/Instrumentation/CGProfile.cpp
   - llvm/lib/Transforms/Instrumentation/ControlHeightReduction.cpp
