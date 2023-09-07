@@ -8,7 +8,7 @@ jobs:
       contents: read
       pull-requests: write
     runs-on: ubuntu-latest
-    if: github.repository == 'llvm/llvm-project'
+    if: github.repository == 'jplehr/llvm-project'
     steps:
     - uses: actions/labeler@v4
       with:
