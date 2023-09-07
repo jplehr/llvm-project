@@ -243,7 +243,7 @@ tools:llvm-mca:
   - llvm/include/llvm/MCA/**/*
   - llvm/lib/MCA/**/*
 
-openmp:
+openmp:clang:
   - clang/include/clang/Basic/OpenMP*
   - clang/include/clang/AST/OpenMPClause.h
   - clang/include/clang/AST/DeclOpenMP.h
@@ -262,6 +262,14 @@ openmp:
   - clang/lib/Sema/SemaOpenMP.cpp
   - clang/test/OpenMP/*
   - clang/test/AST/ast-dump-openmp-*
+  - llvm/lib/Frontend/OpenMP/*
+  - llvm/lib/Transforms/IPO/OpenMPOpt.cpp
+  - llvm/include/llvm/Frontend/OpenMP/*
+  - llvm/include/llvm/Transforms/IPO/OpenMPOpt.h
+  - llvm/unittests/Frontend/OpenMP*
+  - llvm/test/Transforms/OpenMP/*
+
+openmp:flang:
   - flang/test/**/OpenMP/*
   - flang/lib/Lower/OpenMP.cpp
   - flang/lib/Semantics/resolve-directives.cpp
@@ -272,13 +280,12 @@ openmp:
   - flang/test/Transforms/omp*
   - mlir/**/OpenMP/*
   - mlir/test/Target/LLVMIR/openmp*
-  - llvm/lib/Frontend/OpenMP/*
-  - llvm/lib/Transforms/IPO/OpenMPOpt.cpp
-  - llvm/include/llvm/Frontend/OpenMP/*
-  - llvm/include/llvm/Transforms/IPO/OpenMPOpt.h
-  - llvm/unittests/Frontend/OpenMP*
-  - llvm/test/Transforms/OpenMP/*
-  - openmp/**
+
+openmp:libomp:
+  - any: ['openmp/**', '!openmp/libomptarget/*']
+
+openmp:libomptarget:
+  - any: ['openmp/libomptarget/**', '!openmp/runtime/*']
 
 PGO:
   - llvm/lib/Transforms/Instrumentation/CGProfile.cpp
