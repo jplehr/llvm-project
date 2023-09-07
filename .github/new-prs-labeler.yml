@@ -285,7 +285,7 @@ openmp:libomp:
   - any: ['openmp/**', '!openmp/libomptarget/*']
 
 openmp:libomptarget:
-  - any: ['openmp/libomptarget/**', '!openmp/runtime/*']
+  - any: ['openmp/**', '!openmp/runtime/*']
 
 PGO:
   - llvm/lib/Transforms/Instrumentation/CGProfile.cpp
