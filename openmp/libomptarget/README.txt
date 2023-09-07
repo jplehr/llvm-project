@@ -13,6 +13,8 @@ $ mkdir build && cd build
 $ cmake path/to/llvm -DCMAKE_C_COMPILER=<C compiler> -DCMAKE_CXX_COMPILER=<C++ compiler>
 $ make omptarget
 
+This is a test
+
 Out-of-tree build:
 
 $ cd where-you-want-to-live
