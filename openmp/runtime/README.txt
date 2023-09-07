@@ -20,6 +20,8 @@ index.html file there.
 If you don't have Doxygen installed, you can download it from
 www.doxygen.org.
 
+This is another test.
+
 
 How to Build the LLVM* OpenMP* Runtime Library
 ==============================================
