@@ -8,6 +8,7 @@ set(LLVM_LINK_COMPONENTS
   AllTargetsInfos
   AsmPrinter
   BitReader
+  BitStreamreader
   CodeGen
   CodeGenTypes
   DWARFLinker
