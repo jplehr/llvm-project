@@ -47,6 +47,8 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case loongarch32:    return "loongarch32";
   case loongarch64:    return "loongarch64";
   case m68k:           return "m68k";
+  case meda26:
+    return "meda26";
   case mips64:         return "mips64";
   case mips64el:       return "mips64el";
   case mips:           return "mips";
@@ -1004,6 +1006,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::loongarch32:
   case Triple::loongarch64:
   case Triple::m68k:
+  case Triple::meda26:
   case Triple::mips64:
   case Triple::mips64el:
   case Triple::mips:
@@ -1719,6 +1722,7 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
     return 0;
 
   case llvm::Triple::avr:
+  case llvm::Triple::meda26:
   case llvm::Triple::msp430:
     return 16;
 
@@ -1845,6 +1849,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::lanai:
   case Triple::loongarch32:
   case Triple::m68k:
+  case Triple::meda26:
   case Triple::mips:
   case Triple::mipsel:
   case Triple::nvptx:

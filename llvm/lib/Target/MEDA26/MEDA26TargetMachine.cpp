@@ -1,4 +1,34 @@
+#include "MEDA26TargetMachine.h"
+#include "TargetInfo/MEDA26TargetInfo.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/TargetParser/Triple.h"
 
-extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26Target() {}
+#include "llvm/MC/TargetRegistry.h"
+
+#include <optional>
+
+using namespace llvm;
+
+static const char *MEDA26DataLayoutStr =
+    "e-p:16:16:16-n16:32-i32:32:32-i16:16:16-i8:8:8-f32:32:32-v32:32:32";
+
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26Target() {
+  RegisterTargetMachine<MEDA26TargetMachine> X(getTheMEDA26Target());
+}
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26TargetMachine() {}
+
+MEDA26TargetMachine::MEDA26TargetMachine(const Target &T, const Triple &TT,
+                                         StringRef CPU, StringRef FS,
+                                         const TargetOptions &Options,
+                                         std::optional<Reloc::Model> RM,
+                                         std::optional<CodeModel::Model> CM,
+                                         CodeGenOptLevel OL, bool JIT)
+    : CodeGenTargetMachineImpl(T, MEDA26DataLayoutStr, TT, CPU, FS, Options,
+                               RM ? *RM : Reloc::Static,
+                               CM ? *CM : CodeModel::Small, OL) {}
+
+MEDA26TargetMachine::~MEDA26TargetMachine() = default;
