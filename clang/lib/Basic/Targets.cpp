@@ -25,6 +25,7 @@
 #include "Targets/Lanai.h"
 #include "Targets/LoongArch.h"
 #include "Targets/M68k.h"
+#include "Targets/MEDA26.h"
 #include "Targets/MSP430.h"
 #include "Targets/Mips.h"
 #include "Targets/NVPTX.h"
@@ -115,6 +116,9 @@ std::unique_ptr<TargetInfo> AllocateTarget(const llvm::Triple &Triple,
   switch (Triple.getArch()) {
   default:
     return nullptr;
+
+  case llvm::Triple::meda26:
+    return std::make_unique<MEDA26TargetInfo>(Triple, Opts);
 
   case llvm::Triple::arc:
     return std::make_unique<ARCTargetInfo>(Triple, Opts);

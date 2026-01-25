@@ -14,7 +14,7 @@
 using namespace llvm;
 
 static const char *MEDA26DataLayoutStr =
-    "e-p:16:16:16-n16:32-i32:32:32-i16:16:16-i8:8:8-f32:32:32-v32:32:32";
+    "e-p:32:32:32-n16:32-i64:64-i32:32:32-i16:16:16-i1:8:8-f32:32:32-v32:32:32";
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26Target() {
   RegisterTargetMachine<MEDA26TargetMachine> X(getTheMEDA26Target());
