@@ -1,7 +1,7 @@
 #include "MEDA26TargetMachine.h"
 #include "MEDA26Subtarget.h"
+#include "MEDA26TargetObjectFile.h"
 #include "MEDA26TargetTransformInfo.h"
-
 #include "TargetInfo/MEDA26TargetInfo.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -35,7 +35,10 @@ MEDA26TargetMachine::MEDA26TargetMachine(const Target &T, const Triple &TT,
                                          CodeGenOptLevel OL, bool JIT)
     : CodeGenTargetMachineImpl(T, MEDA26DataLayoutStr, TT, CPU, FS, Options,
                                RM ? *RM : Reloc::Static,
-                               CM ? *CM : CodeModel::Small, OL) {}
+                               CM ? *CM : CodeModel::Small, OL),
+      TLOF(createTLOF(getTargetTriple())) {
+  initAsmInfo();
+}
 
 MEDA26TargetMachine::~MEDA26TargetMachine() = default;
 
@@ -57,3 +60,17 @@ TargetTransformInfo
 MEDA26TargetMachine::getTargetTransformInfo(const Function &F) const {
   return TargetTransformInfo(std::make_unique<MEDA26TTIImpl>(this, F));
 }
+
+TargetPassConfig *MEDA26TargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new MEDA26PassConfig(*this, PM);
+}
+
+MEDA26PassConfig::MEDA26PassConfig(TargetMachine &TM, PassManagerBase &PM)
+    : TargetPassConfig(TM, PM) {}
+
+void MEDA26PassConfig::addIRPasses() {
+  TargetPassConfig::addIRPasses();
+  // FIXME this may need to be changed
+}
+
+bool MEDA26PassConfig::addInstSelector() { return false; }
