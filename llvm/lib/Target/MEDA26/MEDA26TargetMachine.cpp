@@ -1,4 +1,5 @@
 #include "MEDA26TargetMachine.h"
+#include "MEDA26Subtarget.h"
 #include "TargetInfo/MEDA26TargetInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
@@ -21,6 +22,8 @@ extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26Target() {
 }
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26TargetMachine() {}
 
+static std::unique_ptr<MEDA26Subtarget> SubtargetSingleton = nullptr;
+
 MEDA26TargetMachine::MEDA26TargetMachine(const Target &T, const Triple &TT,
                                          StringRef CPU, StringRef FS,
                                          const TargetOptions &Options,
@@ -32,3 +35,17 @@ MEDA26TargetMachine::MEDA26TargetMachine(const Target &T, const Triple &TT,
                                CM ? *CM : CodeModel::Small, OL) {}
 
 MEDA26TargetMachine::~MEDA26TargetMachine() = default;
+
+const MEDA26Subtarget *
+MEDA26TargetMachine::getSubtargetImpl(const Function &F) const {
+  Attribute CPUAttr = F.getFnAttribute("target-cpu");
+  Attribute FSAttr = F.getFnAttribute("target-features");
+
+  StringRef CPU = CPUAttr.isValid() ? CPUAttr.getValueAsString() : TargetCPU;
+  StringRef FS = FSAttr.isValid() ? FSAttr.getValueAsString() : TargetFS;
+
+  if (!SubtargetSingleton)
+    SubtargetSingleton =
+        std::make_unique<MEDA26Subtarget>(TargetTriple, CPU, FS, *this);
+  return SubtargetSingleton.get();
+}

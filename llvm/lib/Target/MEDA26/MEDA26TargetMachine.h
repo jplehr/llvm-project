@@ -5,6 +5,8 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/TargetParser/Triple.h"
 
+#include "MEDA26Subtarget.h"
+
 namespace llvm {
 
 class MEDA26TargetMachine : public CodeGenTargetMachineImpl {
@@ -15,5 +17,7 @@ public:
                       std::optional<CodeModel::Model> CM, CodeGenOptLevel OL,
                       bool JIT);
   ~MEDA26TargetMachine() override;
+
+  const MEDA26Subtarget *getSubtargetImpl(const Function &F) const;
 };
 } // namespace llvm
