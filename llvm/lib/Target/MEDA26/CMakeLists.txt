@@ -4,8 +4,10 @@ add_llvm_target(MEDA26CodeGen
 	MEDA26TargetMachine.cpp
 	MEDA26Subtarget.cpp
 	MEDA26ISelLowering.cpp
+	MEDA26TargetTransformInfo.cpp
 
 	LINK_COMPONENTS
+	Analysis
 	Core
 	CodeGen
 	MEDA26Desc
@@ -13,6 +15,7 @@ add_llvm_target(MEDA26CodeGen
 	MC
 	Target
 	TargetParser
+	TransformUtils
 	SelectionDAG
 	Support
 

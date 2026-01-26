@@ -7,6 +7,8 @@
 
 #include "MEDA26Subtarget.h"
 
+#pragma once
+
 namespace llvm {
 
 class MEDA26TargetMachine : public CodeGenTargetMachineImpl {
@@ -19,5 +21,6 @@ public:
   ~MEDA26TargetMachine() override;
 
   const MEDA26Subtarget *getSubtargetImpl(const Function &F) const;
+  TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
 };
 } // namespace llvm

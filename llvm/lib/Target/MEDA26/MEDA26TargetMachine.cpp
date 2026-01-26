@@ -1,6 +1,9 @@
 #include "MEDA26TargetMachine.h"
 #include "MEDA26Subtarget.h"
+#include "MEDA26TargetTransformInfo.h"
+
 #include "TargetInfo/MEDA26TargetInfo.h"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/CodeGenTargetMachineImpl.h"
 #include "llvm/Support/CodeGen.h"
@@ -48,4 +51,9 @@ MEDA26TargetMachine::getSubtargetImpl(const Function &F) const {
     SubtargetSingleton =
         std::make_unique<MEDA26Subtarget>(TargetTriple, CPU, FS, *this);
   return SubtargetSingleton.get();
+}
+
+TargetTransformInfo
+MEDA26TargetMachine::getTargetTransformInfo(const Function &F) const {
+  return TargetTransformInfo(std::make_unique<MEDA26TTIImpl>(this, F));
 }
