@@ -1,3 +1,4 @@
+#include "MEDA26MCTargetDesc.h"
 #include "MEDA26MCAsmInfo.h"
 #include "TargetInfo/MEDA26TargetInfo.h"
 
@@ -12,10 +13,14 @@
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Compiler.h"
 
+#define GET_REGINFO_MC_DESC
+#include "MEDA26GenRegisterInfo.inc"
+
 #define GET_SUBTARGETINFO_MC_DESC
 #include "MEDA26GenSubtargetInfo.inc"
 
 using namespace llvm;
+using namespace MEDA26_MC;
 
 static MCSubtargetInfo *
 createMEDA26MCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
@@ -25,7 +30,9 @@ createMEDA26MCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
 static MCInstrInfo *createMEDA26MCInstrInfo() { return new MCInstrInfo(); }
 
 static MCRegisterInfo *createMEDA26MCRegisterInfo(const Triple &Triple) {
-  return new MCRegisterInfo();
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitMEDA26MCRegisterInfo(X, MEDA26::s0);
+  return X;
 }
 
 extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMEDA26TargetMC() {
