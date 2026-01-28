@@ -24,7 +24,9 @@ public:
   ~MEDA26TargetMachine() override;
 
   const MEDA26Subtarget *getSubtargetImpl(const Function &F) const;
+
   TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
+
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
   TargetLoweringObjectFile *getObjFileLowering() const override {

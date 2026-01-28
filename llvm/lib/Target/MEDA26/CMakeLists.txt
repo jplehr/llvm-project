@@ -3,6 +3,7 @@ add_llvm_component_group(MEDA26)
 set(LLVM_TARGET_DEFINITIONS MEDA26.td)
 tablegen(LLVM MEDA26GenSubtargetInfo.inc -gen-subtarget)
 tablegen(LLVM MEDA26GenRegisterInfo.inc -gen-register-info)
+tablegen(LLVM MEDA26GenInstructions.inc -gen-instr-info)
 add_public_tablegen_target(MEDA26CommonTableGen)
 
 add_llvm_target(MEDA26CodeGen
@@ -11,6 +12,8 @@ add_llvm_target(MEDA26CodeGen
 	MEDA26ISelLowering.cpp
 	MEDA26TargetTransformInfo.cpp
 	MEDA26TargetObjectFile.cpp
+	MEDA26FrameLowering.cpp
+	MEDA26RegisterInfo.cpp
 
 	LINK_COMPONENTS
 	Analysis

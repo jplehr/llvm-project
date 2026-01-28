@@ -1,4 +1,10 @@
 
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/RegisterScavenging.h"
+#include "llvm/MC/MCRegister.h"
+#include <cstdint>
+
+#define GET_REGINFO_HEADER
 #define GET_REGINFO_ENUM
 #include "MEDA26GenRegisterInfo.inc"
 

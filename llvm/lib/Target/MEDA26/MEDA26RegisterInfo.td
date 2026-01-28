@@ -30,6 +30,6 @@ def q0 : Register<"q0"> {
 }
 }
 
-def SINGLES : RegisterClass<"MEDA26", [f32], 32, (add s0, s1, s2, s3)>;
-def DOUBLES : RegisterClass<"MEDA26", [f64], 64, (add d0, d1)>;
+def SINGLES : RegisterClass<"MEDA26", [i32, f32], 32, (add s0, s1, s2, s3)>;
+def DOUBLES : RegisterClass<"MEDA26", [i64, f64], 64, (add d0, d1)>;
 def QUADS : RegisterClass<"MEDA26", [f128], 128, (add q0)>;
