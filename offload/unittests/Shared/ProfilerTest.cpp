@@ -8,14 +8,37 @@
 
 #include "Shared/Profile.h"
 #include "Shared/SourceInfo.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/TimeProfiler.h"
 #include <gtest/gtest.h>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <cstdlib>
 
 class ProfilerTest : public ::testing::Test {
 protected:
+  static std::optional<std::string>
+  readFileToString(const std::filesystem::path &File) {
+    std::ifstream Stream(File);
+    if (!Stream.is_open())
+      return std::nullopt;
+
+    std::string Contents((std::istreambuf_iterator<char>(Stream)),
+                         std::istreambuf_iterator<char>());
+    return Contents;
+  }
+
+  static std::optional<llvm::json::Value>
+  parseTraceJSON(const std::string &TraceContents) {
+    auto Parsed = llvm::json::parse(TraceContents);
+    if (!Parsed)
+      return std::nullopt;
+    return std::move(*Parsed);
+  }
+
   void SetUp() override {
     // Clear any existing environment variables
     unsetenv("LIBOMPTARGET_PROFILE");
@@ -33,6 +56,9 @@ protected:
     if (std::filesystem::exists(temp_dir)) {
       std::filesystem::remove_all(temp_dir);
     }
+
+    if (llvm::timeTraceProfilerEnabled())
+      llvm::timeTraceProfilerCleanup();
     
     // Clear environment variables
     unsetenv("LIBOMPTARGET_PROFILE");
@@ -208,10 +234,13 @@ TEST_F(ProfilerTest, ProfilingDisabledWhenEnvironmentVariableNotSet) {
   // Don't set LIBOMPTARGET_PROFILE environment variable
   
   Profiler &profiler = Profiler::get();
+  ASSERT_FALSE(llvm::timeTraceProfilerEnabled());
   
   // These should still work without crashing, even when profiling is disabled
   EXPECT_NO_THROW(profiler.beginSection("TestFunction", "TestDetail"));
   EXPECT_NO_THROW(profiler.endSection());
+
+  EXPECT_FALSE(std::filesystem::exists(test_profile_file));
 }
 
 // Test with custom granularity
@@ -253,9 +282,18 @@ TEST_F(ProfilerTest, InvalidGranularityEnvironmentVariable) {
   setenv("LIBOMPTARGET_PROFILE_GRANULARITY", "invalid", 1);
   
   Profiler &profiler = Profiler::get();
-  
+  ASSERT_TRUE(llvm::timeTraceProfilerEnabled());
+
   EXPECT_NO_THROW(profiler.beginSection("TestFunction", "TestDetail"));
   EXPECT_NO_THROW(profiler.endSection());
+
+  if (llvm::Error Err = llvm::timeTraceProfilerWrite(
+          test_profile_file.string(), "invalid-granularity-trace")) {
+    ADD_FAILURE() << llvm::toString(std::move(Err));
+    return;
+  }
+
+  EXPECT_TRUE(std::filesystem::exists(test_profile_file));
 }
 
 // Test multiple sequential sections (no nesting)
@@ -545,4 +583,159 @@ TEST_F(ProfilerTest, GetNameFromMapping) {
   const char* malformed = "no_semicolons";
   map_var_info_t malformed_info = const_cast<char*>(malformed);
   EXPECT_NO_THROW(getNameFromMapping(malformed_info));
+}
+
+TEST_F(ProfilerTest, ProfilerWritesTraceFileWhenEnabled) {
+  setenv("LIBOMPTARGET_PROFILE", test_profile_file.c_str(), 1);
+
+  Profiler &profiler = Profiler::get();
+  ASSERT_TRUE(llvm::timeTraceProfilerEnabled());
+
+  const std::string EventName = "TraceWriteEvent";
+  const std::string EventDetail = "trace detail for verification";
+
+  profiler.beginSection(EventName, EventDetail);
+  profiler.endSection();
+
+  if (llvm::Error Err = llvm::timeTraceProfilerWrite(
+          test_profile_file.string(), "profiler-trace")) {
+    ADD_FAILURE() << llvm::toString(std::move(Err));
+    return;
+  }
+
+  ASSERT_TRUE(std::filesystem::exists(test_profile_file));
+
+  auto ContentsOpt = readFileToString(test_profile_file);
+  ASSERT_TRUE(ContentsOpt.has_value());
+
+  auto JsonOpt = parseTraceJSON(*ContentsOpt);
+  ASSERT_TRUE(JsonOpt.has_value());
+
+  auto *Object = JsonOpt->getAsObject();
+  ASSERT_NE(Object, nullptr);
+
+  auto *TraceEvents = Object->getArray("traceEvents");
+  ASSERT_NE(TraceEvents, nullptr);
+
+  bool FoundName = false;
+  bool FoundDetail = false;
+  for (const auto &EventValue : *TraceEvents) {
+    const auto *EventObj = EventValue.getAsObject();
+    if (!EventObj)
+      continue;
+    if (auto *NameValue = EventObj->getString("name"))
+      if (*NameValue == EventName)
+        FoundName = true;
+
+    if (auto *DetailValue = EventObj->getString("args")) {
+      if (DetailValue->contains(EventDetail))
+        FoundDetail = true;
+    } else if (const auto *ArgsObj = EventObj->getObject("args")) {
+      if (auto *DetailStr = ArgsObj->getString("detail"))
+        if (DetailStr->contains(EventDetail))
+          FoundDetail = true;
+    }
+
+    if (FoundName && FoundDetail)
+      break;
+  }
+
+  EXPECT_TRUE(FoundName);
+  EXPECT_TRUE(FoundDetail);
+}
+
+TEST_F(ProfilerTest, BeginSectionLambdaDetailExecutes) {
+  setenv("LIBOMPTARGET_PROFILE", test_profile_file.c_str(), 1);
+
+  Profiler &profiler = Profiler::get();
+  ASSERT_TRUE(llvm::timeTraceProfilerEnabled());
+
+  bool DetailCalled = false;
+  const std::string Detail = "lambda-generated-detail";
+  profiler.beginSection("LambdaDetailEvent", [&]() -> std::string {
+    DetailCalled = true;
+    return Detail;
+  });
+  profiler.endSection();
+
+  EXPECT_TRUE(DetailCalled);
+
+  if (llvm::Error Err = llvm::timeTraceProfilerWrite(
+          test_profile_file.string(), "lambda-trace")) {
+    ADD_FAILURE() << llvm::toString(std::move(Err));
+    return;
+  }
+
+  auto ContentsOpt = readFileToString(test_profile_file);
+  ASSERT_TRUE(ContentsOpt.has_value());
+  EXPECT_NE(ContentsOpt->find(Detail), std::string::npos);
+}
+
+TEST_F(ProfilerTest, InvalidGranularityStillProducesTrace) {
+  setenv("LIBOMPTARGET_PROFILE", test_profile_file.c_str(), 1);
+  setenv("LIBOMPTARGET_PROFILE_GRANULARITY", "invalid", 1);
+
+  Profiler &profiler = Profiler::get();
+  ASSERT_TRUE(llvm::timeTraceProfilerEnabled());
+
+  profiler.beginSection("GranularityEvent", "granularity detail");
+  profiler.endSection();
+
+  if (llvm::Error Err = llvm::timeTraceProfilerWrite(
+          test_profile_file.string(), "granularity-trace")) {
+    ADD_FAILURE() << llvm::toString(std::move(Err));
+    return;
+  }
+
+  EXPECT_TRUE(std::filesystem::exists(test_profile_file));
+}
+
+TEST_F(ProfilerTest, TimescopeMacrosEmitSourceLocationDetails) {
+  setenv("LIBOMPTARGET_PROFILE", test_profile_file.c_str(), 1);
+
+  const char *IdentSource = ";TraceSource.cpp;MacroFunction;42;7;;";
+  ident_t Ident = {0, 0, 0, 0, IdentSource};
+
+  auto ScopedWork = [&Ident]() { TIMESCOPE_WITH_IDENT(&Ident); };
+
+  Profiler &profiler = Profiler::get();
+  ASSERT_TRUE(llvm::timeTraceProfilerEnabled());
+
+  ScopedWork();
+  profiler.beginSection("ManualSection", "manual detail");
+  profiler.endSection();
+
+  if (llvm::Error Err = llvm::timeTraceProfilerWrite(
+          test_profile_file.string(), "macro-trace")) {
+    ADD_FAILURE() << llvm::toString(std::move(Err));
+    return;
+  }
+
+  auto ContentsOpt = readFileToString(test_profile_file);
+  ASSERT_TRUE(ContentsOpt.has_value());
+  EXPECT_NE(ContentsOpt->find("TraceSource.cpp"), std::string::npos);
+  EXPECT_NE(ContentsOpt->find("MacroFunction"), std::string::npos);
+}
+
+TEST_F(ProfilerTest, ProfilerWriteFailurePropagatesError) {
+  const std::filesystem::path MissingDir = temp_dir / "unwritable";
+  std::filesystem::remove_all(MissingDir);
+
+  const std::filesystem::path TracePath =
+      MissingDir / "nested" / "profiler.json";
+  setenv("LIBOMPTARGET_PROFILE", TracePath.c_str(), 1);
+
+  Profiler &profiler = Profiler::get();
+  ASSERT_TRUE(llvm::timeTraceProfilerEnabled());
+
+  profiler.beginSection("FailureEvent", "detail");
+  profiler.endSection();
+
+  llvm::Error Err =
+      llvm::timeTraceProfilerWrite(TracePath.string(), "missing-dir");
+  EXPECT_TRUE(static_cast<bool>(Err));
+  if (Err)
+    llvm::consumeError(std::move(Err));
+
+  EXPECT_FALSE(std::filesystem::exists(TracePath));
 }
