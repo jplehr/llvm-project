@@ -151,3 +151,4 @@ set(OFFLOAD_TESTS_FORCE_AMDGPU_ARCH "" CACHE STRING
 
 add_subdirectory(OffloadAPI)
 add_subdirectory(Conformance)
+add_subdirectory(Shared)
