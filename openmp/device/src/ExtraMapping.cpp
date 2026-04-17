@@ -86,6 +86,28 @@ static uint32_t getGenericModeMainThreadId() {
 }
 
 #endif
+
+#if defined(__SPIRV__) && !defined(__AMDGPU__) && !defined(__NVPTX__)
+
+static uint32_t __kmpc_impl_smid() { return 0; }
+
+static uint32_t getGenericModeMainThreadId() {
+  unsigned Mask = mapping::getWarpSize() - 1;
+  return (__kmpc_get_hardware_num_threads_in_block() - 1) & (~Mask);
+}
+
+#endif
+
+#if !defined(__AMDGPU__) && !defined(__NVPTX__) && !defined(__SPIRV__)
+
+static uint32_t __kmpc_impl_smid() { return 0; }
+
+static uint32_t getGenericModeMainThreadId() {
+  unsigned Mask = mapping::getWarpSize() - 1;
+  return (__kmpc_get_hardware_num_threads_in_block() - 1) & (~Mask);
+}
+
+#endif
 ///}
 
 } // namespace impl

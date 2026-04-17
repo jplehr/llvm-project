@@ -18,6 +18,7 @@
 #include "Synchronization.h"
 #include "DeviceTypes.h"
 #include "DeviceUtils.h"
+#include "gpuintrin.h"
 
 #define __XTEAM_SHARED_LDS volatile __gpu_local
 
@@ -71,6 +72,33 @@ double xteamr_shfl_xor_d(double var, int laneMask, const uint32_t width) {
   lo = xteamr_shfl_xor_int(lo, laneMask, width);
   asm volatile("mov.b64 %0, {%1,%2};" : "=d"(var) : "r"(lo), "r"(hi));
   return var;
+}
+#endif
+
+#if !defined(__AMDGPU__) && !defined(__NVPTX__)
+int xteamr_shfl_xor_int(int var, const int lane_mask, const uint32_t width) {
+  int self = ompx::mapping::getThreadIdInWarp();
+  int index = self ^ lane_mask;
+  index = index >= ((self + width) & ~(width - 1)) ? self : index;
+  return __gpu_shuffle_idx_u32(lanes::All, static_cast<uint32_t>(index),
+                               static_cast<uint32_t>(var), width);
+}
+
+double xteamr_shfl_xor_d(double var, const int lane_mask,
+                         const uint32_t width) {
+  static_assert(sizeof(double) == 2 * sizeof(int), "");
+  static_assert(sizeof(double) == sizeof(uint64_t), "");
+
+  int tmp[2];
+  __builtin_memcpy(tmp, &var, sizeof(tmp));
+  tmp[0] = xteamr_shfl_xor_int(tmp[0], lane_mask, width);
+  tmp[1] = xteamr_shfl_xor_int(tmp[1], lane_mask, width);
+
+  uint64_t tmp0 =
+      (static_cast<uint64_t>(tmp[1]) << 32ull) | static_cast<uint32_t>(tmp[0]);
+  double tmp1;
+  __builtin_memcpy(&tmp1, &tmp0, sizeof(tmp0));
+  return tmp1;
 }
 #endif
 
