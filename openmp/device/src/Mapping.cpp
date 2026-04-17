@@ -170,6 +170,10 @@ extern "C" {
   return mapping::getNumberOfThreadsInBlock(mapping::DIM_X);
 }
 
+[[gnu::noinline]] uint32_t __kmpc_get_hardware_block_id_in_kernel() {
+  return mapping::getBlockIdInKernel(mapping::DIM_X);
+}
+
 [[gnu::noinline]] uint32_t __kmpc_get_warp_size() {
   return mapping::getWarpSize();
 }

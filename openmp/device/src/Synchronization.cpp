@@ -195,7 +195,7 @@ void setCriticalLock(omp_lock_t *Lock) { setLock(Lock); }
 #endif
 ///}
 
-#if defined(__SPIRV__)
+#if defined(__SPIRV__) && !defined(__AMDGPU__) && !defined(__NVPTX__)
 
 [[clang::loader_uninitialized]] Local<uint32_t> namedBarrierTracker;
 
