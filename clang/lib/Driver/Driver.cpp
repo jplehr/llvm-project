@@ -5441,6 +5441,25 @@ Action *Driver::ConstructPhaseAction(
     return C.MakeAction<CompileJobAction>(Input, types::TY_LLVM_BC);
   }
   case phases::Backend: {
+    auto OffloadingToolChain = Input->getOffloadingToolChain();
+    bool UseBitcodePipelineForAMDOpenMPSPIRV =
+        TargetDeviceOffloadKind == Action::OFK_OpenMP && OffloadingToolChain &&
+        OffloadingToolChain->getTriple().isSPIRV() &&
+        OffloadingToolChain->getTriple().getVendor() ==
+            llvm::Triple::VendorType::AMD &&
+        OffloadingToolChain->getTriple().getOS() ==
+            llvm::Triple::OSType::AMDHSA &&
+        Args.hasFlag(options::OPT_offload_new_driver,
+                     options::OPT_no_offload_new_driver,
+                     C.getActiveOffloadKinds() != Action::OFK_None) &&
+        !offloadDeviceOnly() && !isSaveTempsEnabled() &&
+        !(Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_emit_llvm));
+
+    // The AMD OpenMP SPIR-V path performs device linking in linker-wrapper via
+    // llvm-link, so preserve LLVM bitcode until the final device link.
+    if (UseBitcodePipelineForAMDOpenMPSPIRV)
+      return Input;
+
     if (TargetLTOMode != LTOK_None) {
       bool IsDeviceOffload = TargetDeviceOffloadKind != Action::OFK_None;
       if (!IsDeviceOffload) {
@@ -5481,6 +5500,23 @@ Action *Driver::ConstructPhaseAction(
     return C.MakeAction<BackendJobAction>(Input, types::TY_PP_Asm);
   }
   case phases::Assemble:
+    if (TargetDeviceOffloadKind == Action::OFK_OpenMP) {
+      auto OffloadingToolChain = Input->getOffloadingToolChain();
+      bool UseBitcodePipelineForAMDOpenMPSPIRV =
+          OffloadingToolChain && OffloadingToolChain->getTriple().isSPIRV() &&
+          OffloadingToolChain->getTriple().getVendor() ==
+              llvm::Triple::VendorType::AMD &&
+          OffloadingToolChain->getTriple().getOS() ==
+              llvm::Triple::OSType::AMDHSA &&
+          Args.hasFlag(options::OPT_offload_new_driver,
+                       options::OPT_no_offload_new_driver,
+                       C.getActiveOffloadKinds() != Action::OFK_None) &&
+          !offloadDeviceOnly() && !isSaveTempsEnabled() &&
+          !(Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_emit_llvm));
+      if (UseBitcodePipelineForAMDOpenMPSPIRV)
+        return Input;
+    }
+
     // When -marm64x is used, construct jobs for the EC and native targets and
     // merge them into an archive with llvm-objcopy.
     const llvm::Triple Target(llvm::Triple::normalize(TargetTriple));
@@ -7140,7 +7176,10 @@ const ToolChain &Driver::getOffloadToolChain(
       // For AMDHSA offloading (HIP, OpenMP), use the unified AMDGPUToolChain
       // This handles both amdgpu-amd-amdhsa and spirv64-amd-amdhsa
       // FIXME: This should not key off language or OS.
-      if (Kind == Action::OFK_HIP || Kind == Action::OFK_OpenMP)
+      if (Kind == Action::OFK_OpenMP && Target.isSPIRV())
+        TC = std::make_unique<toolchains::SPIRVOpenMPToolChain>(
+            *this, Target, *HostTC, Args);
+      else if (Kind == Action::OFK_HIP || Kind == Action::OFK_OpenMP)
         TC = std::make_unique<toolchains::AMDGPUToolChain>(*this, Target, Args,
                                                            HostTC.get(), Kind);
       break;
