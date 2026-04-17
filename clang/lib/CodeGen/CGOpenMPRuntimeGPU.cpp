@@ -2627,10 +2627,22 @@ llvm::Value *CGOpenMPRuntimeGPU::getGPUThreadID(CodeGenFunction &CGF) {
       Args);
 }
 llvm::Value *CGOpenMPRuntimeGPU::getGPUBlockID(CodeGenFunction &CGF) {
+  if (CGM.getTarget().getTriple().isAMDGCN()) {
   CGBuilderTy &Bld = CGF.Builder;
   llvm::Function *F =
       CGF.CGM.getIntrinsic(llvm::Intrinsic::amdgcn_workgroup_id_x);
   return Bld.CreateCall(F, {}, "gpu_block_id");
+  }
+
+  llvm::Module *M = &CGF.CGM.getModule();
+  const char *BlockID = "__kmpc_get_hardware_block_id_in_kernel";
+  llvm::Function *F = M->getFunction(BlockID);
+  if (!F) {
+    F = llvm::Function::Create(llvm::FunctionType::get(CGF.Int32Ty, {}, false),
+                               llvm::GlobalVariable::ExternalLinkage, BlockID,
+                               M);
+  }
+  return CGF.Builder.CreateCall(F, {}, "gpu_block_id");
 }
 
 llvm::Value *CGOpenMPRuntimeGPU::getGPUNumBlocks(CodeGenFunction &CGF) {
