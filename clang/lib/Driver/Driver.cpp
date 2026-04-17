@@ -5364,6 +5364,20 @@ Action *Driver::ConstructPhaseAction(
     return C.MakeAction<CompileJobAction>(Input, types::TY_LLVM_BC);
   }
   case phases::Backend: {
+    auto OffloadingToolChain = Input->getOffloadingToolChain();
+    bool UseBitcodePipelineForAMDOpenMPSPIRV =
+        TargetDeviceOffloadKind == Action::OFK_OpenMP && OffloadingToolChain &&
+        OffloadingToolChain->getTriple().isSPIRV() &&
+        OffloadingToolChain->getTriple().getVendor() ==
+            llvm::Triple::VendorType::AMD &&
+        OffloadingToolChain->getTriple().getOS() ==
+            llvm::Triple::OSType::AMDHSA &&
+        Args.hasFlag(options::OPT_offload_new_driver,
+                     options::OPT_no_offload_new_driver,
+                     C.getActiveOffloadKinds() != Action::OFK_None) &&
+        !offloadDeviceOnly() && !isSaveTempsEnabled() &&
+        !(Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_emit_llvm));
+
     // Skip a redundant Backend phase for HIP device code when using the new
     // offload driver, where mid-end is done in linker wrapper. With
     // -save-temps, we still need the Backend phase to produce optimized IR.
@@ -5373,6 +5387,11 @@ Action *Driver::ConstructPhaseAction(
                      C.getActiveOffloadKinds() != Action::OFK_None) &&
         !offloadDeviceOnly() && !isSaveTempsEnabled() &&
         !(Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_emit_llvm)))
+      return Input;
+
+    // The AMD OpenMP SPIR-V path performs device linking in linker-wrapper via
+    // llvm-link, so preserve LLVM bitcode until the final device link.
+    if (UseBitcodePipelineForAMDOpenMPSPIRV)
       return Input;
 
     if (isUsingLTO() && TargetDeviceOffloadKind == Action::OFK_None) {
@@ -5395,7 +5414,6 @@ Action *Driver::ConstructPhaseAction(
                                         options::OPT_no_use_spirv_backend,
                                         /*Default=*/false);
 
-    auto OffloadingToolChain = Input->getOffloadingToolChain();
     // For AMD SPIRV, if offloadDeviceOnly(), we call the SPIRV backend unless
     // LLVM bitcode was requested explicitly or RDC is set. If
     // !offloadDeviceOnly, we emit LLVM bitcode, and clang-linker-wrapper will
@@ -5465,8 +5483,24 @@ Action *Driver::ConstructPhaseAction(
 
     return C.MakeAction<BackendJobAction>(Input, types::TY_PP_Asm);
   }
-  case phases::Assemble:
+  case phases::Assemble: {
+    auto OffloadingToolChain = Input->getOffloadingToolChain();
+    bool UseBitcodePipelineForAMDOpenMPSPIRV =
+        TargetDeviceOffloadKind == Action::OFK_OpenMP && OffloadingToolChain &&
+        OffloadingToolChain->getTriple().isSPIRV() &&
+        OffloadingToolChain->getTriple().getVendor() ==
+            llvm::Triple::VendorType::AMD &&
+        OffloadingToolChain->getTriple().getOS() ==
+            llvm::Triple::OSType::AMDHSA &&
+        Args.hasFlag(options::OPT_offload_new_driver,
+                     options::OPT_no_offload_new_driver,
+                     C.getActiveOffloadKinds() != Action::OFK_None) &&
+        !offloadDeviceOnly() && !isSaveTempsEnabled() &&
+        !(Args.hasArg(options::OPT_S) && !Args.hasArg(options::OPT_emit_llvm));
+    if (UseBitcodePipelineForAMDOpenMPSPIRV)
+      return Input;
     return C.MakeAction<AssembleJobAction>(std::move(Input), types::TY_Object);
+  }
   }
 
   llvm_unreachable("invalid phase in ConstructPhaseAction");
@@ -7040,9 +7074,14 @@ const ToolChain &Driver::getOffloadToolChain(
       if (Kind == Action::OFK_HIP)
         TC = std::make_unique<toolchains::HIPAMDToolChain>(*this, Target,
                                                            *HostTC, Args);
-      else if (Kind == Action::OFK_OpenMP)
-        TC = std::make_unique<toolchains::AMDGPUOpenMPToolChain>(*this, Target,
-                                                                 *HostTC, Args);
+      else if (Kind == Action::OFK_OpenMP) {
+        if (Target.isSPIRV())
+          TC = std::make_unique<toolchains::SPIRVOpenMPToolChain>(*this, Target,
+                                                                  *HostTC, Args);
+        else
+          TC = std::make_unique<toolchains::AMDGPUOpenMPToolChain>(*this, Target,
+                                                                   *HostTC, Args);
+      }
       break;
     default:
       break;

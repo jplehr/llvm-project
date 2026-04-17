@@ -11,6 +11,7 @@
 #include "clang/Driver/Driver.h"
 #include "clang/Driver/InputInfo.h"
 #include "clang/Options/Options.h"
+#include "llvm/Support/Process.h"
 
 using namespace clang::driver;
 using namespace clang::driver::toolchains;
@@ -41,10 +42,23 @@ void SPIRV::constructTranslateCommand(Compilation &C, const Tool &T,
   auto VersionedTool = "llvm-spirv-"s + std::to_string(LLVM_VERSION_MAJOR);
   if (T.getToolChain().getTriple().getVendor() == llvm::Triple::VendorType::AMD)
     VersionedTool.insert(0, "amd-");
-  std::string ExeCand = T.getToolChain().GetProgramPath(VersionedTool.c_str());
-  if (!llvm::sys::fs::can_execute(ExeCand))
-    ExeCand = T.getToolChain().GetProgramPath(
-        VersionedTool.substr(0, VersionedTool.find_last_of('-')).c_str());
+  std::string ExeCand;
+  if (auto TranslatorOverride =
+          llvm::sys::Process::GetEnv("LLVM_SPIRV_TRANSLATOR_PATH");
+      TranslatorOverride && !TranslatorOverride->empty()) {
+    ExeCand = *TranslatorOverride;
+  } else {
+    ExeCand = T.getToolChain().GetProgramPath(VersionedTool.c_str());
+    if (!llvm::sys::fs::can_execute(ExeCand))
+      ExeCand = T.getToolChain().GetProgramPath(
+          VersionedTool.substr(0, VersionedTool.find_last_of('-')).c_str());
+  }
+
+  if (!llvm::sys::fs::can_execute(ExeCand) &&
+      !C.getArgs().hasArg(clang::options::OPT__HASH_HASH_HASH)) {
+    C.getDriver().Diag(clang::diag::err_drv_no_spv_tools) << ExeCand;
+    return;
+  }
 
   const char *Exec = C.getArgs().MakeArgString(ExeCand);
   C.addCommand(std::make_unique<Command>(JA, T, ResponseFileSupport::None(),
