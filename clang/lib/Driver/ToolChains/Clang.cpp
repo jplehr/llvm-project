@@ -10071,6 +10071,17 @@ void LinkerWrapper::ConstructJob(Compilation &C, const JobAction &JA,
         }
       }
 
+      // OpenMP AMD SPIR-V uses the nested device-compiler invocation in
+      // linker-wrapper. Default to SPIR-V backend there to avoid dependence on
+      // external translator startup behavior. Users can override with
+      // -no-use-spirv-backend.
+      if (Kind == Action::OFK_OpenMP && TC->getTriple().isSPIRV() &&
+          TC->getTriple().getVendor() == llvm::Triple::VendorType::AMD &&
+          TC->getTriple().getOS() == llvm::Triple::OSType::AMDHSA &&
+          !ToolChainArgs.hasArg(OPT_use_spirv_backend,
+                                OPT_no_use_spirv_backend))
+        CompilerArgs.push_back("-use-spirv-backend");
+
       if (isAMDGPU && !C.getDriver().IsFlangMode()) {
         StringRef OOpt;
         if (const Arg *A = Args.getLastArg(options::OPT_O_Group)) {
