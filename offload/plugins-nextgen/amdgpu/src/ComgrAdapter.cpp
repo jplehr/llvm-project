@@ -61,6 +61,8 @@ using FnActionInfoSetLanguage =
     amd_comgr_status_t (*)(amd_comgr_action_info_t, amd_comgr_language_t);
 using FnActionInfoSetIsaName =
     amd_comgr_status_t (*)(amd_comgr_action_info_t, const char *);
+using FnActionInfoSetDeviceLibLinking =
+    amd_comgr_status_t (*)(amd_comgr_action_info_t, bool);
 using FnDoAction = amd_comgr_status_t (*)(amd_comgr_action_kind_t,
                                           amd_comgr_action_info_t,
                                           amd_comgr_data_set_t,
@@ -84,6 +86,7 @@ struct ComgrApiTable {
   FnDestroyActionInfo destroy_action_info = nullptr;
   FnActionInfoSetLanguage action_info_set_language = nullptr;
   FnActionInfoSetIsaName action_info_set_isa_name = nullptr;
+  FnActionInfoSetDeviceLibLinking action_info_set_device_lib_linking = nullptr;
   FnDoAction do_action = nullptr;
   FnActionDataCount action_data_count = nullptr;
   FnActionDataGetData action_data_get_data = nullptr;
@@ -115,6 +118,8 @@ amd_comgr_status_t amd_comgr_action_info_set_language(amd_comgr_action_info_t,
                                                       amd_comgr_language_t);
 amd_comgr_status_t amd_comgr_action_info_set_isa_name(amd_comgr_action_info_t,
                                                       const char *);
+amd_comgr_status_t amd_comgr_action_info_set_device_lib_linking(
+    amd_comgr_action_info_t, bool);
 amd_comgr_status_t amd_comgr_do_action(amd_comgr_action_kind_t,
                                        amd_comgr_action_info_t,
                                        amd_comgr_data_set_t,
@@ -140,6 +145,7 @@ const ComgrApiTable &getLinkedApi() {
       amd_comgr_destroy_action_info,
       amd_comgr_action_info_set_language,
       amd_comgr_action_info_set_isa_name,
+      amd_comgr_action_info_set_device_lib_linking,
       amd_comgr_do_action,
       amd_comgr_action_data_count,
       amd_comgr_action_data_get_data};
@@ -207,6 +213,13 @@ const ComgrApiTable *getDynamicApi(std::string &ErrorMessage) {
         !Resolve(API.action_data_get_data, "amd_comgr_action_data_get_data")) {
       return;
     }
+
+    // Optional: older COMGR variants may not expose this symbol.
+    if (void *Sym =
+            DynlibHandle->getAddressOfSymbol(
+                "amd_comgr_action_info_set_device_lib_linking"))
+      API.action_info_set_device_lib_linking =
+          reinterpret_cast<FnActionInfoSetDeviceLibLinking>(Sym);
 
     IsLoaded = API.isUsable();
     if (!IsLoaded && LoadError.empty())
@@ -361,6 +374,14 @@ ComgrAdapter::compileSPIRVToRelocatable(StringRef SPIRVImage, StringRef IsaName)
                                                      IsaNameStr.c_str()),
                        "action_info_set_isa_name"))
     return std::move(Err);
+  // Request COMGR to link AMD device libraries during SPIR-V->reloc
+  // compilation, so runtime-side lld sees fully-resolved device helper calls.
+  if (API->action_info_set_device_lib_linking) {
+    if (auto Err = Check(
+            API->action_info_set_device_lib_linking(Cleanup.Action, true),
+            "action_info_set_device_lib_linking"))
+      return std::move(Err);
+  }
 
   if (auto Err = Check(API->create_data_set(&Cleanup.RelocSet),
                        "create_data_set(RELOC)"))
