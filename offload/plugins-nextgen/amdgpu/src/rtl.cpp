@@ -27,6 +27,7 @@
 #include <variant>
 
 #include "ErrorReporting.h"
+#include "ComgrAdapter.h"
 #include "Shared/APITypes.h"
 #include "Shared/Debug.h"
 #include "Shared/Environment.h"
@@ -49,6 +50,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/ELF.h"
+#include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Frontend/OpenMP/OMPConstants.h"
 #include "llvm/Frontend/OpenMP/OMPGridValues.h"
 #include "llvm/Support/Error.h"
@@ -3961,6 +3963,22 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
   Expected<DeviceImageTy *>
   loadBinaryImpl(std::unique_ptr<MemoryBuffer> &&TgtImage,
                  int32_t ImageId) override {
+    if (identify_magic(TgtImage->getBuffer()) == file_magic::spirv_object) {
+      std::string IsaName = "amdgcn-amd-amdhsa--" + getComputeUnitKind();
+      auto RelocOrErr =
+          ComgrAdapter::compileSPIRVToRelocatable(TgtImage->getBuffer(), IsaName);
+      if (!RelocOrErr)
+        return RelocOrErr.takeError();
+
+      // Reuse the existing AMDGPU post-link path (lld -> shared object) so the
+      // resulting image can be loaded by the HSA runtime.
+      auto LinkedOrErr = doJITPostProcessing(std::move(*RelocOrErr));
+      if (!LinkedOrErr)
+        return LinkedOrErr.takeError();
+
+      TgtImage = std::move(*LinkedOrErr);
+    }
+
     // Allocate and initialize the image object.
     AMDGPUDeviceImageTy *AMDImage = Plugin.allocate<AMDGPUDeviceImageTy>();
     new (AMDImage) AMDGPUDeviceImageTy(ImageId, *this, std::move(TgtImage));
@@ -6100,6 +6118,12 @@ struct AMDGPUPluginTy final : public GenericPluginTy {
       if (offloading::amdgpu::isImageCompatibleWithEnv(
               *Processor, ElfOrErr->getPlatformFlags(), Target.str()))
         return true;
+    return false;
+  }
+
+  Expected<bool> isImageCompatible(StringRef Image) const override {
+    if (identify_magic(Image) == file_magic::spirv_object)
+      return true;
     return false;
   }
 
