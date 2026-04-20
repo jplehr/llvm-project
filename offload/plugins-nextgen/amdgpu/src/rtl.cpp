@@ -3874,17 +3874,43 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
   loadBinaryImpl(std::unique_ptr<MemoryBuffer> &&TgtImage,
                  int32_t ImageId) override {
     if (identify_magic(TgtImage->getBuffer()) == file_magic::spirv_object) {
+      ODBG(OLDT_Init) << "AMDGPU device " << getDeviceId()
+                      << " received SPIR-V image (bytes="
+                      << TgtImage->getBufferSize() << ", image_id=" << ImageId
+                      << ", cu='" << getComputeUnitKind() << "')";
       std::string IsaName = "amdgcn-amd-amdhsa--" + getComputeUnitKind();
+      ODBG(OLDT_Init) << "AMDGPU device " << getDeviceId()
+                      << " entering COMGR SPIR-V pipeline in mode '"
+                      << ComgrAdapter::getModeName() << "' for ISA '" << IsaName
+                      << "'";
       auto RelocOrErr =
           ComgrAdapter::compileSPIRVToRelocatable(TgtImage->getBuffer(), IsaName);
-      if (!RelocOrErr)
-        return RelocOrErr.takeError();
+      if (!RelocOrErr) {
+        std::string ErrorMessage = toString(RelocOrErr.takeError());
+        REPORT() << "AMDGPU SPIR-V COMGR compile failed on device "
+                 << getDeviceId() << " (mode='" << ComgrAdapter::getModeName()
+                 << "', isa='" << IsaName << "', image_bytes="
+                 << TgtImage->getBufferSize() << "): " << ErrorMessage;
+        return createStringError(inconvertibleErrorCode(), "%s",
+                                 ErrorMessage.c_str());
+      }
+      ODBG(OLDT_Init) << "AMDGPU device " << getDeviceId()
+                      << " COMGR produced relocatable (bytes="
+                      << (*RelocOrErr)->getBufferSize() << ")";
 
       // Reuse the existing AMDGPU post-link path (lld -> shared object) so the
       // resulting image can be loaded by the HSA runtime.
       auto LinkedOrErr = doJITPostProcessing(std::move(*RelocOrErr));
-      if (!LinkedOrErr)
-        return LinkedOrErr.takeError();
+      if (!LinkedOrErr) {
+        std::string ErrorMessage = toString(LinkedOrErr.takeError());
+        REPORT() << "AMDGPU SPIR-V post-link failed on device " << getDeviceId()
+                 << " (isa='" << IsaName << "'): " << ErrorMessage;
+        return createStringError(inconvertibleErrorCode(), "%s",
+                                 ErrorMessage.c_str());
+      }
+      ODBG(OLDT_Init) << "AMDGPU device " << getDeviceId()
+                      << " post-link produced executable image (bytes="
+                      << (*LinkedOrErr)->getBufferSize() << ")";
 
       TgtImage = std::move(*LinkedOrErr);
     }
