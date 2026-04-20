@@ -4,9 +4,39 @@ find_package(hsa-runtime64 QUIET 1.2.0 HINTS ${CMAKE_INSTALL_PREFIX} PATHS /opt/
 # Create the library and add the default arguments.
 add_target_library(omptarget.rtl.amdgpu AMDGPU)
 
-target_sources(omptarget.rtl.amdgpu PRIVATE src/rtl.cpp)
+target_sources(omptarget.rtl.amdgpu PRIVATE src/rtl.cpp src/ComgrAdapter.cpp)
 target_include_directories(omptarget.rtl.amdgpu PRIVATE
                            ${CMAKE_CURRENT_SOURCE_DIR}/utils)
+
+option(LIBOMPTARGET_BUILD_AMDGPU_COMGR_SUPPORT
+  "Enable COMGR-backed SPIR-V runtime JIT path in AMDGPU plugin" ON)
+option(LIBOMPTARGET_FORCE_DLOPEN_LIBCOMGR
+  "Build AMDGPU plugin with dlopened COMGR runtime" OFF)
+
+if (LIBOMPTARGET_BUILD_AMDGPU_COMGR_SUPPORT)
+  find_library(AMD_COMGR_RUNTIME amd_comgr
+    HINTS
+      ${CMAKE_INSTALL_PREFIX}/lib
+      ${CMAKE_INSTALL_PREFIX}/lib64
+    PATHS
+      /opt/rocm/lib
+      /opt/rocm/lib64)
+
+  if (AMD_COMGR_RUNTIME AND NOT LIBOMPTARGET_FORCE_DLOPEN_LIBCOMGR)
+    message(STATUS "Building AMDGPU plugin with linked COMGR runtime")
+    target_link_libraries(omptarget.rtl.amdgpu PRIVATE ${AMD_COMGR_RUNTIME})
+    target_compile_definitions(omptarget.rtl.amdgpu PRIVATE
+      LIBOMPTARGET_AMDGPU_COMGR_LINKED)
+  else()
+    message(STATUS "Building AMDGPU plugin with dlopened COMGR runtime")
+    target_compile_definitions(omptarget.rtl.amdgpu PRIVATE
+      LIBOMPTARGET_AMDGPU_COMGR_DYNAMIC)
+  endif()
+else()
+  message(STATUS "Building AMDGPU plugin with COMGR disabled")
+  target_compile_definitions(omptarget.rtl.amdgpu PRIVATE
+    LIBOMPTARGET_AMDGPU_COMGR_DISABLED)
+endif()
 
 if (WIN32 AND NOT "amdgpu" IN_LIST LIBOMPTARGET_DLOPEN_PLUGINS)
   message(WARNING "Direct linking against libhsa is not supported on Windows; "
