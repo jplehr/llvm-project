@@ -2666,9 +2666,24 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
     return Status;
   }
 
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "COMGR SPIR-V compile pipeline begin:\n"
+         << "\tInputCount: " << InSet->DataObjects.size() << '\n'
+         << "\tIsaName: " << (ActionInfo->IsaName ? ActionInfo->IsaName : "<unset>")
+         << '\n'
+         << "\tShouldLinkDeviceLibs: "
+         << (ActionInfo->ShouldLinkDeviceLibs ? "true" : "false") << '\n';
+  }
+
+  size_t InputIndex = 0;
   for (auto *Input : InSet->DataObjects) {
     if (Input->DataKind != AMD_COMGR_DATA_KIND_SPIRV)
       return AMD_COMGR_STATUS_ERROR_INVALID_ARGUMENT;
+    if (env::shouldEmitVerboseLogs()) {
+      LogS << "\tInput[" << InputIndex++ << "]: kind=" << unsigned(Input->DataKind)
+           << ", size=" << Input->Size << ", name="
+           << (Input->Name ? Input->Name : "<unnamed>") << '\n';
+    }
   }
 
   // Translate .spv to .bc
@@ -2680,19 +2695,37 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
 
   if (auto Status = translateSpirvToBitcodeImpl(InSet, TranslatedSpirv))
     return Status;
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "\tTranslatedBitcodeCount: " << TranslatedSpirv->DataObjects.size()
+         << '\n';
+  }
 
   // Extract relevant -cc1 flags from @llvm.cmdline
   if (auto Status = extractSpirvFlags(TranslatedSpirv))
     return Status;
+  if (env::shouldEmitVerboseLogs()) {
+    size_t BCIndex = 0;
+    for (auto *Bc : TranslatedSpirv->DataObjects) {
+      LogS << "\tBitcode[" << BCIndex++ << "]: size=" << Bc->Size
+           << ", spirv_flag_count=" << Bc->SpirvFlags.size() << ", name="
+           << (Bc->Name ? Bc->Name : "<unnamed>") << '\n';
+    }
+  }
 
   // Compile bitcode to relocatable
   if (ActionInfo->IsaName) {
+    if (env::shouldEmitVerboseLogs()) {
+      LogS << "\tAdding target identifier flags for '" << ActionInfo->IsaName
+           << "'\n";
+    }
     if (auto Status = addTargetIdentifierFlags(ActionInfo->IsaName)) {
       return Status;
     }
   }
 
   if (ActionInfo->ShouldLinkDeviceLibs) {
+    if (env::shouldEmitVerboseLogs())
+      LogS << "\tAdding AMD device libraries for SPIR-V pipeline\n";
     if (auto Status = addDeviceLibraries()) {
       return Status;
     }
@@ -2703,7 +2736,19 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
   Args.push_back("-mllvm");
   Args.push_back("-amdgpu-internalize-symbols");
 
-  return processFiles(AMD_COMGR_DATA_KIND_RELOCATABLE, ".o", TranslatedSpirv);
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "\tCompilerArgCount: " << Args.size() << '\n';
+    for (const char *Arg : Args)
+      LogS << "\t  Arg: " << Arg << '\n';
+  }
+
+  amd_comgr_status_t Status =
+      processFiles(AMD_COMGR_DATA_KIND_RELOCATABLE, ".o", TranslatedSpirv);
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "COMGR SPIR-V compile pipeline end: status=" << unsigned(Status)
+         << '\n';
+  }
+  return Status;
 }
 
 amd_comgr_status_t AMDGPUCompiler::compileSourceToSpirv() {

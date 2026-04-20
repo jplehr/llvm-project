@@ -1395,6 +1395,10 @@ amd_comgr_status_t AMD_COMGR_API
       HeaderS << "amd_comgr_do_action:\n"
               << "\t  ActionKind: " << getActionKindName(ActionKind) << '\n'
               << "\t     IsaName: " << ActionInfoP->IsaName << '\n'
+              << "\tShouldLinkDeviceLibs: "
+              << (ActionInfoP->ShouldLinkDeviceLibs ? "true" : "false") << '\n'
+              << "\t ShouldUseVFS: "
+              << (ActionInfoP->ShouldUseVFS ? "true" : "false") << '\n'
               << "\t     Options:";
       for (auto &Option : ActionInfoP->getOptions()) {
         HeaderS << ' ';
@@ -1406,7 +1410,18 @@ amd_comgr_status_t AMD_COMGR_API
               << '\n'
               << " Comgr Branch-Commit: " << xstringify(AMD_COMGR_GIT_BRANCH)
               << '-' << xstringify(AMD_COMGR_GIT_COMMIT) << '\n'
-              << "\t LLVM Commit: " << clang::getLLVMRevision();
+              << "\t LLVM Commit: " << clang::getLLVMRevision() << '\n'
+              << "\t  InputCount: " << InputSetP->DataObjects.size() << '\n';
+      if (ActionKind == AMD_COMGR_ACTION_COMPILE_SPIRV_TO_RELOCATABLE ||
+          ActionKind == AMD_COMGR_ACTION_TRANSLATE_SPIRV_TO_BC) {
+        size_t InputIndex = 0;
+        for (DataObject *Input : InputSetP->DataObjects) {
+          HeaderS << "\t   Input[" << InputIndex++
+                  << "]: kind=" << unsigned(Input->DataKind)
+                  << ", size=" << Input->Size << ", name="
+                  << (Input->Name ? Input->Name : "<unnamed>") << '\n';
+        }
+      }
       Log.emit(LogLevel::Debug, HeaderStr);
     }
 

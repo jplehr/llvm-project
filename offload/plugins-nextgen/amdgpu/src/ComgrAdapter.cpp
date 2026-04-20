@@ -4,8 +4,11 @@
 
 #include "llvm/Support/DynamicLibrary.h"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <dlfcn.h>
 #include <mutex>
 #include <string>
 #include <type_traits>
@@ -235,6 +238,41 @@ const ComgrApiTable *getDynamicApi(std::string &ErrorMessage) {
 }
 #endif
 
+const char *envValueOrUnset(const char *Name) {
+  if (const char *Value = std::getenv(Name))
+    return Value;
+  return "<unset>";
+}
+
+std::string describeComgrSymbolLocation(const ComgrApiTable *API) {
+  if (!API || !API->do_action)
+    return "<no-do_action-symbol>";
+
+  Dl_info Info;
+  if (dladdr(reinterpret_cast<void *>(API->do_action), &Info) && Info.dli_fname)
+    return std::string(Info.dli_fname);
+
+  return "<unknown-shared-object>";
+}
+
+void logComgrEnvSnapshot() {
+  ODBG(OLDT_Init) << "COMGR env snapshot: AMD_COMGR_CACHE='"
+                  << envValueOrUnset("AMD_COMGR_CACHE")
+                  << "', AMD_COMGR_CACHE_POLICY='"
+                  << envValueOrUnset("AMD_COMGR_CACHE_POLICY")
+                  << "', AMD_COMGR_CACHE_DIR='"
+                  << envValueOrUnset("AMD_COMGR_CACHE_DIR")
+                  << "', AMD_COMGR_EMIT_VERBOSE_LOGS='"
+                  << envValueOrUnset("AMD_COMGR_EMIT_VERBOSE_LOGS")
+                  << "', AMD_COMGR_REDIRECT_LOGS='"
+                  << envValueOrUnset("AMD_COMGR_REDIRECT_LOGS")
+                  << "', AMD_COMGR_SAVE_TEMPS='"
+                  << envValueOrUnset("AMD_COMGR_SAVE_TEMPS")
+                  << "', OMP_TARGET_OFFLOAD='"
+                  << envValueOrUnset("OMP_TARGET_OFFLOAD")
+                  << "', LD_PRELOAD='" << envValueOrUnset("LD_PRELOAD") << "'";
+}
+
 } // namespace
 
 namespace llvm {
@@ -279,8 +317,14 @@ ComgrAdapter::compileSPIRVToRelocatable(StringRef SPIRVImage, StringRef IsaName)
                            "'%s'",
                            getModeName());
 #else
+  const auto StartTime = std::chrono::steady_clock::now();
   const ComgrApiTable *API = nullptr;
   std::string DynamicError;
+
+  ODBG(OLDT_Init) << "AMDGPU SPIR-V JIT begin: mode='" << getModeName()
+                  << "', ISA='" << IsaName
+                  << "', input_spirv_bytes=" << SPIRVImage.size();
+  logComgrEnvSnapshot();
 
 #if defined(LIBOMPTARGET_AMDGPU_COMGR_LINKED)
   API = &getLinkedApi();
@@ -292,6 +336,14 @@ ComgrAdapter::compileSPIRVToRelocatable(StringRef SPIRVImage, StringRef IsaName)
                              "mode: %s",
                              DynamicError.c_str());
 #endif
+
+  std::string ComgrSymbolLocation = describeComgrSymbolLocation(API);
+  ODBG(OLDT_Init) << "AMDGPU SPIR-V JIT using COMGR from '"
+                  << ComgrSymbolLocation << "'";
+  ODBG(OLDT_Init)
+      << "AMDGPU SPIR-V JIT optional API "
+      << "'amd_comgr_action_info_set_device_lib_linking' is "
+      << (API->action_info_set_device_lib_linking ? "available" : "missing");
 
   auto GetStatusString = [&](amd_comgr_status_t Status) -> const char * {
     const char *Message = nullptr;
@@ -305,9 +357,10 @@ ComgrAdapter::compileSPIRVToRelocatable(StringRef SPIRVImage, StringRef IsaName)
   auto MakeStageError = [&](const char *Stage, amd_comgr_status_t Status)
       -> Error {
     return createStringError(inconvertibleErrorCode(),
-                             "COMGR %s failed in mode '%s' for ISA '%s': %s "
-                             "(status=%u)",
+                             "COMGR %s failed in mode '%s' for ISA '%s' "
+                             "(spv_bytes=%zu, comgr='%s'): %s (status=%u)",
                              Stage, getModeName(), IsaName.str().c_str(),
+                             SPIRVImage.size(), ComgrSymbolLocation.c_str(),
                              GetStatusString(Status), unsigned(Status));
   };
 
@@ -381,6 +434,8 @@ ComgrAdapter::compileSPIRVToRelocatable(StringRef SPIRVImage, StringRef IsaName)
             API->action_info_set_device_lib_linking(Cleanup.Action, true),
             "action_info_set_device_lib_linking"))
       return std::move(Err);
+    ODBG(OLDT_Init)
+        << "AMDGPU SPIR-V JIT requested COMGR device library linking";
   }
 
   if (auto Err = Check(API->create_data_set(&Cleanup.RelocSet),
@@ -424,6 +479,10 @@ ComgrAdapter::compileSPIRVToRelocatable(StringRef SPIRVImage, StringRef IsaName)
   ODBG(OLDT_Init) << "COMGR mode '" << getModeName()
                   << "' compiled SPIR-V image to relocatable ("
                   << OutputSize << " bytes) for ISA " << IsaName;
+  const auto DurationMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - StartTime)
+                              .count();
+  ODBG(OLDT_Init) << "AMDGPU SPIR-V JIT finished in " << DurationMs << " ms";
 
   return MemoryBuffer::getMemBufferCopy(Output, "amdgpu-comgr-reloc");
 #endif
