@@ -44,7 +44,10 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsAMDGPU.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
@@ -2351,6 +2354,133 @@ static inline const llvm::StringSet<> ValidSpirvFlags{
     "-O3",
     "--save-temps"};
 
+amd_comgr_status_t AMDGPUCompiler::normalizeTranslatedSpirvIntrinsics(
+    DataSet *BcSet) {
+  // FIXME: Temporary workaround in COMGR. The long-term fix should be in
+  // SPIR-V translation so AMDGPU ABI intrinsics are emitted with canonical
+  // address-space signatures from the start.
+  for (auto *Bc : BcSet->DataObjects) {
+    SMDiagnostic SMDiag;
+    LLVMContext Context;
+    Context.setDiagnosticHandler(
+        std::make_unique<AMDGPUCompilerDiagnosticHandler>(this->LogS), true);
+
+    auto Mod = getLazyIRModule(
+        MemoryBuffer::getMemBuffer(StringRef(Bc->Data, Bc->Size), "", false),
+        SMDiag, Context, true);
+    if (!Mod) {
+      SMDiag.print("SPIR-V Bitcode", LogS, /* ShowColors */ false);
+      return AMD_COMGR_STATUS_ERROR;
+    }
+
+    if (Error Err = Mod->materializeAll()) {
+      LogS << "failed to materialize translated SPIR-V bitcode for temporary "
+              "intrinsic normalization: "
+           << toString(std::move(Err)) << '\n';
+      return AMD_COMGR_STATUS_ERROR;
+    }
+
+    bool Changed = false;
+    size_t RewrittenCallCount = 0;
+    size_t NormalizedDeclCount = 0;
+
+    auto NormalizeIntrinsic = [&](Intrinsic::ID ID) -> amd_comgr_status_t {
+      std::string BaseName = Intrinsic::getName(ID).str();
+      Function *OriginalAtName = Mod->getFunction(BaseName);
+      Function *CanonicalDecl = Intrinsic::getOrInsertDeclaration(Mod.get(), ID);
+
+      SmallVector<Function *, 4> DeclsToRewrite;
+      auto AddDecl = [&](Function *F) {
+        if (!F || F == CanonicalDecl)
+          return;
+        for (Function *Existing : DeclsToRewrite)
+          if (Existing == F)
+            return;
+        DeclsToRewrite.push_back(F);
+      };
+
+      AddDecl(OriginalAtName);
+      AddDecl(Mod->getFunction(BaseName + ".renamed"));
+      AddDecl(Mod->getFunction(BaseName + ".invalid"));
+
+      for (Function *BadDecl : DeclsToRewrite) {
+        SmallVector<User *, 16> Uses(BadDecl->users().begin(),
+                                     BadDecl->users().end());
+        if (Uses.empty()) {
+          if (BadDecl->use_empty())
+            BadDecl->eraseFromParent();
+          continue;
+        }
+
+        ++NormalizedDeclCount;
+        Changed = true;
+
+        for (User *U : Uses) {
+          auto *CI = dyn_cast<CallInst>(U);
+          if (!CI || CI->getCalledOperand()->stripPointerCasts() != BadDecl) {
+            LogS << "temporary SPIR-V intrinsic normalization failed for use of "
+                    "declaration '"
+                 << BadDecl->getName() << "'\n";
+            return AMD_COMGR_STATUS_ERROR;
+          }
+
+          IRBuilder<> Builder(CI);
+          SmallVector<Value *, 4> CallArgs(CI->args());
+          CallInst *NewCall = Builder.CreateCall(CanonicalDecl, CallArgs);
+          NewCall->setCallingConv(CI->getCallingConv());
+          NewCall->setTailCallKind(CI->getTailCallKind());
+          NewCall->setDebugLoc(CI->getDebugLoc());
+
+          Value *Replacement = NewCall;
+          if (NewCall->getType() != CI->getType()) {
+            if (NewCall->getType()->isPointerTy() && CI->getType()->isPointerTy())
+              Replacement = Builder.CreateAddrSpaceCast(NewCall, CI->getType(),
+                                                        NewCall->getName() +
+                                                            ".ascast");
+            else
+              Replacement = Builder.CreateBitCast(NewCall, CI->getType(),
+                                                  NewCall->getName() +
+                                                      ".bitcast");
+          }
+
+          CI->replaceAllUsesWith(Replacement);
+          CI->eraseFromParent();
+          ++RewrittenCallCount;
+        }
+
+        if (BadDecl->use_empty())
+          BadDecl->eraseFromParent();
+      }
+
+      return AMD_COMGR_STATUS_SUCCESS;
+    };
+
+    if (auto Status = NormalizeIntrinsic(Intrinsic::amdgcn_implicitarg_ptr))
+      return Status;
+    if (auto Status = NormalizeIntrinsic(Intrinsic::amdgcn_dispatch_ptr))
+      return Status;
+
+    if (!Changed)
+      continue;
+
+    SmallString<0> OutBuf;
+    BitcodeWriter Writer(OutBuf);
+    Writer.writeModule(*Mod, false, nullptr, false, nullptr);
+    Writer.writeSymtab();
+    Writer.writeStrtab();
+    if (auto Status = Bc->setData(StringRef(OutBuf.data(), OutBuf.size())))
+      return Status;
+
+    if (env::shouldEmitVerboseLogs()) {
+      LogS << "Applied temporary SPIR-V intrinsic normalization to '" << Bc->Name
+           << "': declarations=" << NormalizedDeclCount
+           << ", rewritten_calls=" << RewrittenCallCount << '\n';
+    }
+  }
+
+  return AMD_COMGR_STATUS_SUCCESS;
+}
+
 amd_comgr_status_t AMDGPUCompiler::extractSpirvFlags(DataSet *BcSet) {
 
   for (auto *Bc : BcSet->DataObjects) {
@@ -2699,6 +2829,9 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
     LogS << "\tTranslatedBitcodeCount: " << TranslatedSpirv->DataObjects.size()
          << '\n';
   }
+
+  if (auto Status = normalizeTranslatedSpirvIntrinsics(TranslatedSpirv))
+    return Status;
 
   // Extract relevant -cc1 flags from @llvm.cmdline
   if (auto Status = extractSpirvFlags(TranslatedSpirv))
