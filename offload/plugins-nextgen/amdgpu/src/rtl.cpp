@@ -14,6 +14,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <deque>
 #include <memory>
 #include <functional>
@@ -57,6 +58,7 @@
 #include "llvm/Support/FileOutputBuffer.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
@@ -3765,12 +3767,57 @@ struct AMDGPUDeviceTy : public GenericDeviceTy, AMDGenericDeviceTy {
       return Plugin::error(ErrorCode::HOST_IO,
                            "failed to create temporary file for linker");
 
-    const auto &ErrorOrPath = sys::findProgramByName("lld");
-    if (!ErrorOrPath)
-      return createStringError(ErrorCode::HOST_TOOL_NOT_FOUND,
-                               "failed to find `lld` on the PATH.");
+    std::string LLDPath;
+    if (const char *OverridePath = std::getenv("LIBOMPTARGET_AMDGPU_LLD_PATH")) {
+      if (*OverridePath && sys::fs::can_execute(OverridePath))
+        LLDPath = OverridePath;
+      else
+        return Plugin::error(
+            ErrorCode::HOST_TOOL_NOT_FOUND,
+            "LIBOMPTARGET_AMDGPU_LLD_PATH is set but not executable: %s",
+            OverridePath ? OverridePath : "");
+    }
 
-    std::string LLDPath = ErrorOrPath.get();
+    if (LLDPath.empty()) {
+      if (const char *LDLibraryPath = std::getenv("LD_LIBRARY_PATH")) {
+        SmallVector<StringRef, 8> PathEntries;
+        StringRef(LDLibraryPath).split(PathEntries, ':', -1, false);
+        for (StringRef PathEntry : PathEntries) {
+          if (PathEntry.empty())
+            continue;
+
+          SmallString<256> CandidateRoot(PathEntry);
+          if (sys::path::filename(CandidateRoot) == "lib")
+            sys::path::remove_filename(CandidateRoot);
+
+          SmallString<256> CandidatePath(CandidateRoot);
+          sys::path::append(CandidatePath, "bin", "ld.lld");
+          sys::path::remove_dots(CandidatePath, /*remove_dot_dot=*/true);
+          if (sys::fs::can_execute(CandidatePath)) {
+            LLDPath.assign(CandidatePath.str());
+            break;
+          }
+        }
+      }
+    }
+
+    if (LLDPath.empty()) {
+      const auto &ErrorOrPath = sys::findProgramByName("ld.lld");
+      if (ErrorOrPath)
+        LLDPath = ErrorOrPath.get();
+    }
+
+    if (LLDPath.empty()) {
+      const auto &ErrorOrPath = sys::findProgramByName("lld");
+      if (ErrorOrPath)
+        LLDPath = ErrorOrPath.get();
+    }
+
+    if (LLDPath.empty())
+      return createStringError(
+          ErrorCode::HOST_TOOL_NOT_FOUND,
+          "failed to find a compatible linker (`ld.lld` or `lld`) on PATH.");
+
     INFO(OMP_INFOTYPE_PLUGIN_KERNEL, getDeviceId(),
          "Using `%s` to link JITed amdgcn output.", LLDPath.c_str());
 
