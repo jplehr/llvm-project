@@ -399,6 +399,15 @@ void AMDGPUOpenMPToolChain::addClangTargetOptions(
                          options::OPT_fno_gpu_allow_device_init, false))
     CC1Args.push_back("-fgpu-allow-device-init");
 
+  // For SPIR-V we want to retain the pristine output of Clang CodeGen, since
+  // optimizations might lose structure / information that is necessary for
+  // generating optimal concrete AMDGPU code at JIT time. The JIT compiler
+  // (COMGR) will apply optimizations when translating SPIR-V to native ISA.
+  if (getTriple().isSPIRV()) {
+    if (!DriverArgs.hasArg(options::OPT_disable_llvm_passes))
+      CC1Args.push_back("-disable-llvm-passes");
+  }
+
   // Default to "hidden" visibility, as object level linking will not be
   // supported for the foreseeable future.
   if (!DriverArgs.hasArg(options::OPT_fvisibility_EQ,
@@ -487,7 +496,11 @@ void AMDGPUOpenMPToolChain::AddClangSystemIncludeArgs(const ArgList &DriverArgs,
   CC1Args.push_back("-internal-isystem");
   CC1Args.push_back(DriverArgs.MakeArgString(D.Dir + "/../../../include"));
 
-  HostTC.AddClangSystemIncludeArgs(DriverArgs, CC1Args);
+  // For SPIR-V targets, skip host system includes. The glibc headers are
+  // incompatible with SPIR-V device compilation (missing __off_t, etc.).
+  // Device libraries linked at JIT time will provide necessary functions.
+  if (!getTriple().isSPIRV())
+    HostTC.AddClangSystemIncludeArgs(DriverArgs, CC1Args);
 
   CC1Args.push_back("-internal-isystem");
   SmallString<128> P(HostTC.getDriver().ResourceDir);
@@ -569,6 +582,11 @@ AMDGPUOpenMPToolChain::getDeviceLibs(
     const llvm::opt::ArgList &Args,
     const Action::OffloadKind DeviceOffloadingKind) const {
   if (!Args.hasFlag(options::OPT_offloadlib, options::OPT_no_offloadlib, true))
+    return {};
+
+  // For SPIR-V targets, skip ROCm device libraries. They will be linked at
+  // runtime by COMGR when translating SPIR-V to AMDGCN.
+  if (getTriple().isSPIRV())
     return {};
 
   StringRef GpuArch = getProcessorFromTargetID(
