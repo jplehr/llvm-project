@@ -114,6 +114,13 @@ void SPIRVOpenMPToolChain::addClangTargetOptions(
   if (DeviceOffloadingKind != Action::OFK_OpenMP)
     return;
 
+  // For SPIR-V we want to retain the pristine output of Clang CodeGen, since
+  // optimizations might lose structure / information that is necessary for
+  // generating optimal concrete AMDGPU code at JIT time. The JIT compiler
+  // (COMGR) will apply optimizations when translating SPIR-V to native ISA.
+  if (!DriverArgs.hasArg(options::OPT_disable_llvm_passes))
+    CC1Args.push_back("-disable-llvm-passes");
+
   // Keep this close to HIPSPV behavior while prototyping.
   CC1Args.append({"-mllvm", "-vectorize-loops=false", "-mllvm",
                   "-vectorize-slp=false"});

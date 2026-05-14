@@ -1173,11 +1173,14 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
   // with ones created by the 'libc' project if present.
   // TODO: This should be moved to `AddClangSystemIncludeArgs` by passing the
   //       OffloadKind as an argument.
+  // Note: Only add for OpenMP device compilation, not host compilation.
+  // Also exclude SPIR-V targets as libc_wrappers depend on glibc internals.
   if (!Args.hasArg(options::OPT_nostdinc) &&
       Args.hasFlag(options::OPT_offload_inc, options::OPT_no_offload_inc,
                    true) &&
       !Args.hasArg(options::OPT_nobuiltininc) &&
-      (C.getActiveOffloadKinds() == Action::OFK_OpenMP)) {
+      JA.isDeviceOffloading(Action::OFK_OpenMP) &&
+      !getToolChain().getTriple().isSPIRV()) {
     // TODO: CUDA / HIP include their own headers for some common functions
     // implemented here. We'll need to clean those up so they do not conflict.
     SmallString<128> P(D.ResourceDir);
@@ -1188,12 +1191,15 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
   }
 
   // Add system include arguments for all targets but IAMCU.
-  if (!IsIAMCU)
+  // For SPIR-V device compilation, skip system includes as glibc headers
+  // are incompatible (missing __off_t, etc.). Device libraries provide
+  // necessary functions at JIT time.
+  if (!IsIAMCU && !getToolChain().getTriple().isSPIRV())
     forAllAssociatedToolChains(C, JA, getToolChain(),
                                [&Args, &CmdArgs](const ToolChain &TC) {
                                  TC.AddClangSystemIncludeArgs(Args, CmdArgs);
                                });
-  else {
+  else if (IsIAMCU) {
     // For IAMCU add special include arguments.
     getToolChain().AddIAMCUIncludeArgs(Args, CmdArgs);
   }
@@ -7197,23 +7203,33 @@ void Clang::ConstructJob(Compilation &C, const JobAction &JA,
       else
         CmdArgs.push_back("-fno-openmp-target-ignore-env-vars");
 
-      if (Args.hasFlag(options::OPT_fopenmp_target_big_jump_loop,
-                       options::OPT_fno_openmp_target_big_jump_loop, true))
-        CmdArgs.push_back("-fopenmp-target-big-jump-loop");
-      else
-        CmdArgs.push_back("-fno-openmp-target-big-jump-loop");
+      {
+        // Disable specialized kernels for SPIR-V targets - the JIT translation
+        // from SPIR-V to native ISA doesn't handle the specialized kernel ABI.
+        bool IsSPIRV = getToolChain().getTriple().isSPIRV();
+        bool EnableSpecializedKernels = !IsSPIRV;
 
-      if (Args.hasFlag(options::OPT_fopenmp_target_no_loop,
-                       options::OPT_fno_openmp_target_no_loop, true))
-        CmdArgs.push_back("-fopenmp-target-no-loop");
-      else
-        CmdArgs.push_back("-fno-openmp-target-no-loop");
+        if (Args.hasFlag(options::OPT_fopenmp_target_big_jump_loop,
+                         options::OPT_fno_openmp_target_big_jump_loop,
+                         EnableSpecializedKernels))
+          CmdArgs.push_back("-fopenmp-target-big-jump-loop");
+        else
+          CmdArgs.push_back("-fno-openmp-target-big-jump-loop");
 
-      if (Args.hasFlag(options::OPT_fopenmp_target_xteam_reduction,
-                       options::OPT_fno_openmp_target_xteam_reduction, true))
-        CmdArgs.push_back("-fopenmp-target-xteam-reduction");
-      else
-        CmdArgs.push_back("-fno-openmp-target-xteam-reduction");
+        if (Args.hasFlag(options::OPT_fopenmp_target_no_loop,
+                         options::OPT_fno_openmp_target_no_loop,
+                         EnableSpecializedKernels))
+          CmdArgs.push_back("-fopenmp-target-no-loop");
+        else
+          CmdArgs.push_back("-fno-openmp-target-no-loop");
+
+        if (Args.hasFlag(options::OPT_fopenmp_target_xteam_reduction,
+                         options::OPT_fno_openmp_target_xteam_reduction,
+                         EnableSpecializedKernels))
+          CmdArgs.push_back("-fopenmp-target-xteam-reduction");
+        else
+          CmdArgs.push_back("-fno-openmp-target-xteam-reduction");
+      }
 
       if (Args.hasFlag(options::OPT_fopenmp_target_fast_reduction,
                        options::OPT_fno_openmp_target_fast_reduction, false))
