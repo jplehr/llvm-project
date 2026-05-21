@@ -80,6 +80,7 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/TargetParser.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include "time-stat/ts-interface.h"
@@ -2481,6 +2482,112 @@ amd_comgr_status_t AMDGPUCompiler::normalizeTranslatedSpirvIntrinsics(
   return AMD_COMGR_STATUS_SUCCESS;
 }
 
+amd_comgr_status_t
+AMDGPUCompiler::injectAMDGPUTargetAttributes(DataSet *BcSet,
+                                             StringRef OffloadArch) {
+  // After SPIR-V reverse translation, the bitcode lacks target-cpu and
+  // target-features attributes (intentionally dropped by the translator for
+  // portability). We inject them here based on the actual target GPU so that
+  // AMDGPU optimization passes have correct subtarget information.
+  //
+  // See: SPIRV-LLVM-Translator/lib/SPIRV/SPIRVReader.cpp - transAuxDataInst()
+
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "injectAMDGPUTargetAttributes: OffloadArch='" << OffloadArch
+         << "', BcSet->DataObjects.size()=" << BcSet->DataObjects.size()
+         << '\n';
+  }
+
+  if (OffloadArch.empty())
+    return AMD_COMGR_STATUS_SUCCESS;
+
+  // Build target-features string from the GPU name
+  Triple AMDGCNTriple("amdgcn-amd-amdhsa");
+  StringMap<bool> FeatureMap;
+  auto FillResult = AMDGPU::fillAMDGPUFeatureMap(OffloadArch, AMDGCNTriple,
+                                                  FeatureMap);
+  if (FillResult.first != AMDGPU::NO_ERROR) {
+    LogS << "Failed to get features for target '" << OffloadArch
+         << "': " << FillResult.second << '\n';
+    return AMD_COMGR_STATUS_ERROR;
+  }
+
+  // Convert feature map to sorted feature string: "+feat1,+feat2,-feat3,..."
+  SmallVector<std::string, 32> Features;
+  for (const auto &Entry : FeatureMap) {
+    Features.push_back(((Entry.second ? "+" : "-") + Entry.first()).str());
+  }
+  llvm::sort(Features);
+  std::string FeatureStr = llvm::join(Features, ",");
+
+  for (auto *Bc : BcSet->DataObjects) {
+    SMDiagnostic SMDiag;
+    LLVMContext Context;
+    Context.setDiagnosticHandler(
+        std::make_unique<AMDGPUCompilerDiagnosticHandler>(this->LogS), true);
+
+    auto Mod = getLazyIRModule(
+        MemoryBuffer::getMemBuffer(StringRef(Bc->Data, Bc->Size), "", false),
+        SMDiag, Context, true);
+    if (!Mod) {
+      SMDiag.print("SPIR-V Bitcode", LogS, /* ShowColors */ false);
+      return AMD_COMGR_STATUS_ERROR;
+    }
+
+    if (Error Err = Mod->materializeAll()) {
+      LogS << "failed to materialize translated SPIR-V bitcode for target "
+              "attribute injection: "
+           << toString(std::move(Err)) << '\n';
+      return AMD_COMGR_STATUS_ERROR;
+    }
+
+    bool Changed = false;
+    size_t ModifiedFnCount = 0;
+
+    for (Function &F : *Mod) {
+      if (F.isDeclaration())
+        continue;
+
+      // Skip if already has target-cpu (shouldn't happen after SPIR-V
+      // translation, but be defensive)
+      if (F.hasFnAttribute("target-cpu"))
+        continue;
+
+      F.addFnAttr("target-cpu", OffloadArch);
+      if (!FeatureStr.empty())
+        F.addFnAttr("target-features", FeatureStr);
+
+      Changed = true;
+      ++ModifiedFnCount;
+    }
+
+    if (!Changed) {
+      if (env::shouldEmitVerboseLogs()) {
+        LogS << "AMDGPU target attribute injection: no functions needed "
+                "modification in '"
+             << Bc->Name << "'\n";
+      }
+      continue;
+    }
+
+    SmallString<0> OutBuf;
+    BitcodeWriter Writer(OutBuf);
+    Writer.writeModule(*Mod, false, nullptr, false, nullptr);
+    Writer.writeSymtab();
+    Writer.writeStrtab();
+    if (auto Status = Bc->setData(StringRef(OutBuf.data(), OutBuf.size())))
+      return Status;
+
+    if (env::shouldEmitVerboseLogs()) {
+      LogS << "Injected AMDGPU target attributes into '" << Bc->Name
+           << "': target-cpu=" << OffloadArch
+           << ", functions_modified=" << ModifiedFnCount << '\n';
+    }
+  }
+
+  return AMD_COMGR_STATUS_SUCCESS;
+}
+
 amd_comgr_status_t AMDGPUCompiler::extractSpirvFlags(DataSet *BcSet) {
 
   for (auto *Bc : BcSet->DataObjects) {
@@ -2832,6 +2939,16 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
 
   if (auto Status = normalizeTranslatedSpirvIntrinsics(TranslatedSpirv))
     return Status;
+
+  // Inject target-cpu and target-features attributes for AMDGPU optimization
+  if (ActionInfo->IsaName) {
+    TargetIdentifier Ident;
+    if (auto Status = parseTargetIdentifier(ActionInfo->IsaName, Ident))
+      return Status;
+    if (auto Status =
+            injectAMDGPUTargetAttributes(TranslatedSpirv, Ident.Processor))
+      return Status;
+  }
 
   // Extract relevant -cc1 flags from @llvm.cmdline
   if (auto Status = extractSpirvFlags(TranslatedSpirv))
