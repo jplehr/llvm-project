@@ -1174,13 +1174,11 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
   // TODO: This should be moved to `AddClangSystemIncludeArgs` by passing the
   //       OffloadKind as an argument.
   // Note: Only add for OpenMP device compilation, not host compilation.
-  // Also exclude SPIR-V targets as libc_wrappers depend on glibc internals.
   if (!Args.hasArg(options::OPT_nostdinc) &&
       Args.hasFlag(options::OPT_offload_inc, options::OPT_no_offload_inc,
                    true) &&
       !Args.hasArg(options::OPT_nobuiltininc) &&
-      JA.isDeviceOffloading(Action::OFK_OpenMP) &&
-      !getToolChain().getTriple().isSPIRV()) {
+      JA.isDeviceOffloading(Action::OFK_OpenMP)) {
     // TODO: CUDA / HIP include their own headers for some common functions
     // implemented here. We'll need to clean those up so they do not conflict.
     SmallString<128> P(D.ResourceDir);
@@ -1191,15 +1189,12 @@ void Clang::AddPreprocessingOptions(Compilation &C, const JobAction &JA,
   }
 
   // Add system include arguments for all targets but IAMCU.
-  // For SPIR-V device compilation, skip system includes as glibc headers
-  // are incompatible (missing __off_t, etc.). Device libraries provide
-  // necessary functions at JIT time.
-  if (!IsIAMCU && !getToolChain().getTriple().isSPIRV())
+  if (!IsIAMCU)
     forAllAssociatedToolChains(C, JA, getToolChain(),
                                [&Args, &CmdArgs](const ToolChain &TC) {
                                  TC.AddClangSystemIncludeArgs(Args, CmdArgs);
                                });
-  else if (IsIAMCU) {
+  else {
     // For IAMCU add special include arguments.
     getToolChain().AddIAMCUIncludeArgs(Args, CmdArgs);
   }
