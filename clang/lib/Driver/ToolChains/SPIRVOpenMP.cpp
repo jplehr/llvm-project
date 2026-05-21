@@ -147,6 +147,9 @@ SPIRVOpenMPToolChain::GetCXXStdlibType(const ArgList &Args) const {
 
 void SPIRVOpenMPToolChain::AddClangSystemIncludeArgs(
     const ArgList &DriverArgs, ArgStringList &CC1Args) const {
+  // Delegate to host toolchain. This method is called via forAllAssociatedToolChains
+  // during host compilation - we don't want to add GPU-specific includes there.
+  // GPU libc headers for device compilation are added in addClangTargetOptions.
   HostTC.AddClangSystemIncludeArgs(DriverArgs, CC1Args);
 }
 
