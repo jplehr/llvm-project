@@ -10,6 +10,12 @@
 #ifndef __CLANG_OPENMP_DEVICE_FUNCTIONS_H__
 #define __CLANG_OPENMP_DEVICE_FUNCTIONS_H__
 
+// Import types needed by device libdevice declares. Include early to ensure
+// types like intptr_t are visible regardless of which variant block matches.
+#ifndef __cplusplus
+#include <stdint.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
