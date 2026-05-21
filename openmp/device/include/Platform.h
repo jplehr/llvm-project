@@ -14,7 +14,11 @@ namespace platform {
 #pragma omp begin declare target device_type(nohost)
 
 // We cannot use an OpenMP variant because we require "C" linkage.
-#ifdef __AMDGPU__
+// For native AMDGPU targets, we define oclc control constants at compile time.
+// For SPIR-V, these must NOT be defined here - they will be provided by
+// COMGR's addDeviceLibraries() at JIT time based on the actual target GPU.
+// This enables "compile once, run everywhere" portability for SPIR-V.
+#if defined(__AMDGPU__) && !defined(__SPIRV__)
 
 // The ROCm device library uses control globals to alter codegen for the
 // different targets. To avoid needing to link them in manually we simply
