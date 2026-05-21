@@ -61,6 +61,8 @@ class AMDGPUCompiler {
                                     llvm::StringRef FileContent);
   amd_comgr_status_t addDeviceLibraries();
   amd_comgr_status_t normalizeTranslatedSpirvIntrinsics(DataSet *BcSet);
+  amd_comgr_status_t injectAMDGPUTargetAttributes(DataSet *BcSet,
+                                                  llvm::StringRef OffloadArch);
   amd_comgr_status_t extractSpirvFlags(DataSet *BcSet);
   amd_comgr_status_t cloneKernelsInBitcode(DataSet *BcSet);
 
