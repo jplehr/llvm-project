@@ -40,6 +40,9 @@ class AMDGPUCompiler {
   bool UseVFS = false;
   /// Whether embedded libc++ headers were loaded into the VFS.
   bool HasEmbeddedHeaders = false;
+  /// Whether to filter optimization flags from AMD_COMGR_DRIVER_OPTIONS_APPEND.
+  /// Used during SPIR-V linking phase to prevent premature DCE.
+  bool FilterEnvOptFlags = false;
 
   llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS;
   llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFS;
