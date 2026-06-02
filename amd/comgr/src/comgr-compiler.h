@@ -45,6 +45,9 @@ class AMDGPUCompiler {
   /// Cached result of `shouldSkipEmbeddedHeaders`, computed once per compiler
   /// instance from user args + filesystem probe + env override.
   std::optional<bool> SkipEmbeddedHeadersCache;
+  /// Whether to filter optimization flags from AMD_COMGR_DRIVER_OPTIONS_APPEND.
+  /// Used during SPIR-V linking phase to prevent premature DCE.
+  bool FilterEnvOptFlags = false;
 
   llvm::IntrusiveRefCntPtr<llvm::vfs::OverlayFileSystem> OverlayFS;
   llvm::IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> InMemoryFS;

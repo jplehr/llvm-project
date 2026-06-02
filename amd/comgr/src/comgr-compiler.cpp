@@ -1374,7 +1374,13 @@ amd_comgr_status_t AMDGPUCompiler::processFile(DataObject *Input,
 
   // Append options from AMD_COMGR_DRIVER_OPTIONS_APPEND environment variable.
   // Options are space-separated and appended after all other options.
-  Argv.append(EnvArgv.begin(), EnvArgv.end());
+  for (const char *Opt : EnvArgv) {
+    // When FilterEnvOptFlags is set, skip optimization flags (-O*) to prevent
+    // them from overriding the linking phase's -O0.
+    if (FilterEnvOptFlags && StringRef(Opt).starts_with("-O"))
+      continue;
+    Argv.push_back(Opt);
+  }
 
   Argv.push_back(InputFilePath);
 
@@ -2962,7 +2968,12 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
     }
   }
 
-  // Compile bitcode to relocatable
+  // Two-phase compilation: Link device libs at O0 first, then optimize.
+  // This mimics the native LTO flow where optimization happens after all
+  // symbols are linked together, preventing DCE from removing functions
+  // that will be needed by device library implementations.
+
+  // Phase 1: Compile bitcode with device libs at O0 to produce linked BC
   if (ActionInfo->IsaName) {
     if (env::shouldEmitVerboseLogs()) {
       LogS << "\tAdding target identifier flags for '" << ActionInfo->IsaName
@@ -2981,19 +2992,79 @@ amd_comgr_status_t AMDGPUCompiler::compileSpirvToRelocatable() {
     }
   }
 
+  // Force O0 for linking phase to prevent premature DCE.
+  // Also filter optimization flags from AMD_COMGR_DRIVER_OPTIONS_APPEND
+  // to ensure -O0 is actually used (not overridden by user's -O1, etc.)
+  Args.push_back("-O0");
   Args.push_back("-c");
-
-  Args.push_back("-mllvm");
-  Args.push_back("-amdgpu-internalize-symbols");
+  Args.push_back("-emit-llvm");
+  FilterEnvOptFlags = true;
 
   if (env::shouldEmitVerboseLogs()) {
-    LogS << "\tCompilerArgCount: " << Args.size() << '\n';
+    LogS << "\tPhase 1 (link): CompilerArgCount: " << Args.size() << '\n';
     for (const char *Arg : Args)
       LogS << "\t  Arg: " << Arg << '\n';
   }
 
+  // Create intermediate data set for linked BC
+  amd_comgr_data_set_t LinkedBcSetT;
+  if (auto Status = amd_comgr_create_data_set(&LinkedBcSetT))
+    return Status;
+  ScopedDataSetReleaser LinkedBcReleaser(LinkedBcSetT);
+  DataSet *LinkedBcSet = DataSet::convert(LinkedBcSetT);
+
+  // Store original OutSet and temporarily redirect output
+  amd_comgr_data_set_t OrigOutSetT = OutSetT;
+  OutSetT = LinkedBcSetT;
+
   amd_comgr_status_t Status =
-      processFiles(AMD_COMGR_DATA_KIND_RELOCATABLE, ".o", TranslatedSpirv);
+      processFiles(AMD_COMGR_DATA_KIND_BC, ".bc", TranslatedSpirv);
+
+  // Restore original OutSet and flag
+  OutSetT = OrigOutSetT;
+  FilterEnvOptFlags = false;
+
+  if (Status != AMD_COMGR_STATUS_SUCCESS) {
+    if (env::shouldEmitVerboseLogs()) {
+      LogS << "\tPhase 1 (link) failed: status=" << unsigned(Status) << '\n';
+    }
+    return Status;
+  }
+
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "\tPhase 1 complete: LinkedBcCount=" << LinkedBcSet->DataObjects.size()
+         << '\n';
+  }
+
+  // Phase 2: Compile linked BC to relocatable with optimization
+  // Reset Args for phase 2
+  Args.clear();
+  initializeCommandLineArgs(Args);
+
+  if (ActionInfo->IsaName) {
+    if (auto Status = addTargetIdentifierFlags(ActionInfo->IsaName)) {
+      return Status;
+    }
+  }
+
+  // Device libs already linked in phase 1, don't link again
+  Args.push_back("-nogpulib");
+  Args.push_back("-c");
+  // Note: -amdgpu-internalize-symbols is NOT used here because we already
+  // linked device libs in Phase 1. Using it would cause aggressive DCE
+  // to remove runtime functions that appear unused from the kernel's
+  // perspective but are actually needed.
+
+  // User's optimization options will be added by processFile via
+  // AMD_COMGR_DRIVER_OPTIONS_APPEND
+
+  if (env::shouldEmitVerboseLogs()) {
+    LogS << "\tPhase 2 (codegen): CompilerArgCount: " << Args.size() << '\n';
+    for (const char *Arg : Args)
+      LogS << "\t  Arg: " << Arg << '\n';
+  }
+
+  Status = processFiles(AMD_COMGR_DATA_KIND_RELOCATABLE, ".o", LinkedBcSet);
   if (env::shouldEmitVerboseLogs()) {
     LogS << "COMGR SPIR-V compile pipeline end: status=" << unsigned(Status)
          << '\n';
