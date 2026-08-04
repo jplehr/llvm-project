@@ -1,4 +1,5 @@
-//===- SPIRVOpenMP.cpp - SPIR-V OpenMP ToolChain -*- C++ -*-----------------===//
+//===- SPIRVOpenMP.cpp - SPIR-V OpenMP ToolChain -----------------*- C++
+//-*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -43,8 +44,7 @@ void Linker::constructLinkAndEmitSpirvCommand(
     if (Input.isFilename())
       LinkArgs.push_back(Input.getFilename());
 
-  for (const auto &BCLib :
-       TC.getDeviceLibs(Args, {}, Action::OFK_OpenMP))
+  for (const auto &BCLib : TC.getDeviceLibs(Args, {}, Action::OFK_OpenMP))
     LinkArgs.push_back(Args.MakeArgString(BCLib.Path));
 
   for (const Arg *A : Args.filtered(options::OPT_mlink_builtin_bitcode))
@@ -53,20 +53,21 @@ void Linker::constructLinkAndEmitSpirvCommand(
   tools::constructLLVMLinkCommand(C, *this, JA, Inputs, LinkArgs, Output, Args,
                                   TempFile);
 
-  bool UseSPIRVBackend =
-      Args.hasFlag(options::OPT_use_spirv_backend,
-                   options::OPT_no_use_spirv_backend,
-                   /*Default=*/true);
+  bool UseSPIRVBackend = Args.hasFlag(options::OPT_use_spirv_backend,
+                                      options::OPT_no_use_spirv_backend,
+                                      /*Default=*/true);
   InputInfo LinkedBCInput = InputInfo(types::TY_LLVM_BC, TempFile, "");
 
   if (UseSPIRVBackend) {
     llvm::opt::ArgStringList CmdArgs;
-    const char *Triple = C.getArgs().MakeArgString("-triple=spirv64-amd-amdhsa");
+    const char *Triple =
+        C.getArgs().MakeArgString("-triple=spirv64-amd-amdhsa");
     CmdArgs.append({"-cc1", Triple, "-emit-obj", "-disable-llvm-optzns",
                     LinkedBCInput.getFilename(), "-o", Output.getFilename()});
 
     const Driver &Driver = getToolChain().getDriver();
-    const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("clang"));
+    const char *Exec =
+        Args.MakeArgString(getToolChain().GetProgramPath("clang"));
     C.addCommand(std::make_unique<Command>(
         JA, *this, ResponseFileSupport::None(), Exec, CmdArgs, LinkedBCInput,
         Output, Driver.getPrependArg()));
@@ -109,8 +110,7 @@ Tool *SPIRVOpenMPToolChain::buildLinker() const {
 void SPIRVOpenMPToolChain::addClangTargetOptions(
     const llvm::opt::ArgList &DriverArgs, llvm::opt::ArgStringList &CC1Args,
     BoundArch BA, Action::OffloadKind DeviceOffloadingKind) const {
-  HostTC.addClangTargetOptions(DriverArgs, CC1Args, BA,
-                               DeviceOffloadingKind);
+  HostTC.addClangTargetOptions(DriverArgs, CC1Args, BA, DeviceOffloadingKind);
 
   if (DeviceOffloadingKind != Action::OFK_OpenMP)
     return;
@@ -123,12 +123,13 @@ void SPIRVOpenMPToolChain::addClangTargetOptions(
     CC1Args.push_back("-disable-llvm-passes");
 
   // Keep this close to HIPSPV behavior while prototyping.
-  CC1Args.append({"-mllvm", "-vectorize-loops=false", "-mllvm",
-                  "-vectorize-slp=false"});
+  CC1Args.append(
+      {"-mllvm", "-vectorize-loops=false", "-mllvm", "-vectorize-slp=false"});
 
   if (!DriverArgs.hasArg(options::OPT_fvisibility_EQ,
                          options::OPT_fvisibility_ms_compat))
-    CC1Args.append({"-fvisibility=hidden", "-fapply-global-visibility-to-externs"});
+    CC1Args.append(
+        {"-fvisibility=hidden", "-fapply-global-visibility-to-externs"});
 
   if (!DriverArgs.hasFlag(options::OPT_offloadlib, options::OPT_no_offloadlib,
                           true))
@@ -137,7 +138,8 @@ void SPIRVOpenMPToolChain::addClangTargetOptions(
   addOpenMPDeviceRTL(getDriver(), DriverArgs, CC1Args, "", getTriple(), HostTC);
 }
 
-void SPIRVOpenMPToolChain::addClangWarningOptions(ArgStringList &CC1Args) const {
+void SPIRVOpenMPToolChain::addClangWarningOptions(
+    ArgStringList &CC1Args) const {
   HostTC.addClangWarningOptions(CC1Args);
 }
 
@@ -148,9 +150,10 @@ SPIRVOpenMPToolChain::GetCXXStdlibType(const ArgList &Args) const {
 
 void SPIRVOpenMPToolChain::AddClangSystemIncludeArgs(
     const ArgList &DriverArgs, ArgStringList &CC1Args) const {
-  // Delegate to host toolchain. This method is called via forAllAssociatedToolChains
-  // during host compilation - we don't want to add GPU-specific includes there.
-  // GPU libc headers for device compilation are added in addClangTargetOptions.
+  // Delegate to host toolchain. This method is called via
+  // forAllAssociatedToolChains during host compilation - we don't want to add
+  // GPU-specific includes there. GPU libc headers for device compilation are
+  // added in addClangTargetOptions.
   HostTC.AddClangSystemIncludeArgs(DriverArgs, CC1Args);
 }
 
@@ -160,9 +163,9 @@ void SPIRVOpenMPToolChain::AddClangCXXStdlibIncludeArgs(
 }
 
 llvm::SmallVector<ToolChain::BitCodeLibraryInfo, 12>
-SPIRVOpenMPToolChain::getDeviceLibs(const llvm::opt::ArgList &DriverArgs,
-                                    BoundArch BA,
-                                    Action::OffloadKind DeviceOffloadKind) const {
+SPIRVOpenMPToolChain::getDeviceLibs(
+    const llvm::opt::ArgList &DriverArgs, BoundArch BA,
+    Action::OffloadKind DeviceOffloadKind) const {
   llvm::SmallVector<BitCodeLibraryInfo, 12> BCLibs;
 
   if (!DriverArgs.hasFlag(options::OPT_offloadlib, options::OPT_no_offloadlib,

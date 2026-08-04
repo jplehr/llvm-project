@@ -1418,8 +1418,9 @@ amd_comgr_status_t AMD_COMGR_API
         for (DataObject *Input : InputSetP->DataObjects) {
           HeaderS << "\t   Input[" << InputIndex++
                   << "]: kind=" << unsigned(Input->DataKind)
-                  << ", size=" << Input->Size << ", name="
-                  << (Input->Name ? Input->Name : "<unnamed>") << '\n';
+                  << ", size=" << Input->Size
+                  << ", name=" << (Input->Name ? Input->Name : "<unnamed>")
+                  << '\n';
         }
       }
       Log.emit(LogLevel::Debug, HeaderStr);
