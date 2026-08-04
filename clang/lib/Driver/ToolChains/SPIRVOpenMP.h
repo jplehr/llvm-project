@@ -45,8 +45,7 @@ namespace toolchains {
 class LLVM_LIBRARY_VISIBILITY SPIRVOpenMPToolChain : public SPIRVToolChain {
 public:
   SPIRVOpenMPToolChain(const Driver &D, const llvm::Triple &Triple,
-                       const ToolChain &HostTC,
-                       const llvm::opt::ArgList &Args);
+                       const ToolChain &HostTC, const llvm::opt::ArgList &Args);
 
   const llvm::Triple *getAuxTriple() const override {
     return &HostTC.getTriple();
@@ -76,8 +75,9 @@ public:
   getSupportedSanitizers(BoundArch BA,
                          Action::OffloadKind DeviceOffloadKind) const override;
 
-  VersionTuple computeMSVCVersion(const Driver *D,
-                                  const llvm::opt::ArgList &Args) const override;
+  VersionTuple
+  computeMSVCVersion(const Driver *D,
+                     const llvm::opt::ArgList &Args) const override;
 
   void adjustDebugInfoKind(llvm::codegenoptions::DebugInfoKind &DebugInfoKind,
                            const llvm::opt::ArgList &Args) const override;
