@@ -43,7 +43,8 @@ void Linker::constructLinkAndEmitSpirvCommand(
     if (Input.isFilename())
       LinkArgs.push_back(Input.getFilename());
 
-  for (const auto &BCLib : TC.getDeviceLibs(Args, Action::OFK_OpenMP))
+  for (const auto &BCLib :
+       TC.getDeviceLibs(Args, {}, Action::OFK_OpenMP))
     LinkArgs.push_back(Args.MakeArgString(BCLib.Path));
 
   for (const Arg *A : Args.filtered(options::OPT_mlink_builtin_bitcode))
@@ -65,7 +66,7 @@ void Linker::constructLinkAndEmitSpirvCommand(
                     LinkedBCInput.getFilename(), "-o", Output.getFilename()});
 
     const Driver &Driver = getToolChain().getDriver();
-    const char *Exec = Driver.getClangProgramPath();
+    const char *Exec = Args.MakeArgString(getToolChain().GetProgramPath("clang"));
     C.addCommand(std::make_unique<Command>(
         JA, *this, ResponseFileSupport::None(), Exec, CmdArgs, LinkedBCInput,
         Output, Driver.getPrependArg()));
@@ -160,6 +161,7 @@ void SPIRVOpenMPToolChain::AddClangCXXStdlibIncludeArgs(
 
 llvm::SmallVector<ToolChain::BitCodeLibraryInfo, 12>
 SPIRVOpenMPToolChain::getDeviceLibs(const llvm::opt::ArgList &DriverArgs,
+                                    BoundArch BA,
                                     Action::OffloadKind DeviceOffloadKind) const {
   llvm::SmallVector<BitCodeLibraryInfo, 12> BCLibs;
 
@@ -219,8 +221,9 @@ SPIRVOpenMPToolChain::getDeviceLibs(const llvm::opt::ArgList &DriverArgs,
   return BCLibs;
 }
 
-SanitizerMask SPIRVOpenMPToolChain::getSupportedSanitizers() const {
-  return HostTC.getSupportedSanitizers();
+SanitizerMask SPIRVOpenMPToolChain::getSupportedSanitizers(
+    BoundArch BA, Action::OffloadKind DeviceOffloadKind) const {
+  return HostTC.getSupportedSanitizers(BA, DeviceOffloadKind);
 }
 
 VersionTuple

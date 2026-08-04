@@ -69,10 +69,12 @@ public:
       llvm::opt::ArgStringList &CC1Args) const override;
 
   llvm::SmallVector<BitCodeLibraryInfo, 12>
-  getDeviceLibs(const llvm::opt::ArgList &Args,
+  getDeviceLibs(const llvm::opt::ArgList &Args, BoundArch BA,
                 Action::OffloadKind DeviceOffloadKind) const override;
 
-  SanitizerMask getSupportedSanitizers() const override;
+  SanitizerMask
+  getSupportedSanitizers(BoundArch BA,
+                         Action::OffloadKind DeviceOffloadKind) const override;
 
   VersionTuple computeMSVCVersion(const Driver *D,
                                   const llvm::opt::ArgList &Args) const override;
