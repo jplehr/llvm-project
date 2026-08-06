@@ -1,5 +1,4 @@
-//===- SPIRVOpenMP.cpp - SPIR-V OpenMP ToolChain -----------------*- C++
-//-*-===//
+//===- SPIRVOpenMP.cpp - SPIR-V OpenMP ToolChain -------*- C++ -*-===//
 //
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
@@ -135,7 +134,10 @@ void SPIRVOpenMPToolChain::addClangTargetOptions(
                           true))
     return;
 
-  addOpenMPDeviceRTL(getDriver(), DriverArgs, CC1Args, "", getTriple(), HostTC);
+  for (const BitCodeLibraryInfo &BCFile :
+       getDeviceLibs(DriverArgs, BA, DeviceOffloadingKind))
+    CC1Args.append(
+        {"-mlink-builtin-bitcode", DriverArgs.MakeArgString(BCFile.Path)});
 }
 
 void SPIRVOpenMPToolChain::addClangWarningOptions(
@@ -172,28 +174,7 @@ SPIRVOpenMPToolChain::getDeviceLibs(
                           true))
     return {};
 
-  std::string BCName = "libomptarget-spirv.bc";
-
-  if (const Arg *A =
-          DriverArgs.getLastArg(options::OPT_libomptarget_spirv_bc_path_EQ)) {
-    SmallString<128> LibOmpTargetFile(A->getValue());
-    if (llvm::sys::fs::exists(LibOmpTargetFile) &&
-        llvm::sys::fs::is_directory(LibOmpTargetFile)) {
-      llvm::sys::path::append(LibOmpTargetFile, BCName);
-    }
-
-    if (llvm::sys::fs::exists(LibOmpTargetFile)) {
-      BCLibs.emplace_back(std::string(LibOmpTargetFile));
-      return BCLibs;
-    }
-
-    getDriver().Diag(diag::err_drv_omp_offload_target_bcruntime_not_found)
-        << LibOmpTargetFile;
-    return BCLibs;
-  }
-
-  SmallVector<StringRef, 8> LibraryPaths;
-
+  SmallVector<std::string, 8> LibraryPaths;
   if (auto LibPath = llvm::sys::Process::GetEnv("LIBRARY_PATH")) {
     SmallVector<StringRef, 8> Frags;
     const char EnvPathSeparatorStr[] = {llvm::sys::EnvPathSeparator, '\0'};
@@ -209,17 +190,40 @@ SPIRVOpenMPToolChain::getDeviceLibs(
   llvm::sys::path::append(TripleLibPath, "..", "lib", getTriple().getTriple());
   LibraryPaths.emplace_back(TripleLibPath);
 
-  for (StringRef LibraryPath : LibraryPaths) {
-    SmallString<128> LibOmpTargetFile(LibraryPath);
-    llvm::sys::path::append(LibOmpTargetFile, BCName);
-    if (llvm::sys::fs::exists(LibOmpTargetFile)) {
-      BCLibs.emplace_back(std::string(LibOmpTargetFile));
-      return BCLibs;
+  auto FindLibrary = [&](StringRef Name) -> std::optional<std::string> {
+    for (StringRef LibraryPath : LibraryPaths) {
+      SmallString<128> File(LibraryPath);
+      llvm::sys::path::append(File, Name);
+      if (llvm::sys::fs::exists(File))
+        return std::string(File);
     }
+    return std::nullopt;
+  };
+
+  constexpr llvm::StringLiteral BCName = "libomptarget-spirv.bc";
+  if (const Arg *A =
+          DriverArgs.getLastArg(options::OPT_libomptarget_spirv_bc_path_EQ)) {
+    SmallString<128> LibOmpTargetFile(A->getValue());
+    if (llvm::sys::fs::exists(LibOmpTargetFile) &&
+        llvm::sys::fs::is_directory(LibOmpTargetFile))
+      llvm::sys::path::append(LibOmpTargetFile, BCName);
+
+    if (llvm::sys::fs::exists(LibOmpTargetFile))
+      BCLibs.emplace_back(std::string(LibOmpTargetFile));
+    else
+      getDriver().Diag(diag::err_drv_omp_offload_target_bcruntime_not_found)
+          << LibOmpTargetFile;
+  } else if (auto LibOmpTargetFile = FindLibrary(BCName)) {
+    BCLibs.emplace_back(*LibOmpTargetFile);
+  } else {
+    getDriver().Diag(diag::err_drv_omp_offload_target_missingbcruntime)
+        << BCName << "spirv";
   }
 
-  getDriver().Diag(diag::err_drv_omp_offload_target_missingbcruntime)
-      << BCName << "spirv";
+  if (!DriverArgs.hasArg(options::OPT_nostdlib, options::OPT_nodefaultlibs,
+                         options::OPT_nolibc))
+    if (auto LibCFile = FindLibrary("libc.bc"))
+      BCLibs.emplace_back(*LibCFile);
 
   return BCLibs;
 }

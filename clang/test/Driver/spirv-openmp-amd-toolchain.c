@@ -70,6 +70,8 @@
 // RUN:   | FileCheck %s --check-prefix=CHECK-DEVLIB
 
 // CHECK-DEVLIB: "-mlink-builtin-bitcode" "{{.*}}libomptarget-spirv.bc"
+// CHECK-DEVLIB-SAME: "-mlink-builtin-bitcode" "{{.*}}libc.bc"
+
 
 //=============================================================================
 // Test 7: -nogpulib suppresses device library
