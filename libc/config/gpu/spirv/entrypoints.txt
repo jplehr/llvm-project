@@ -34,6 +34,10 @@ set(TARGET_LIBC_ENTRYPOINTS
     # errno.h entrypoints
     libc.src.errno.errno
 
+    # stdlib.h entrypoints
+    libc.src.stdlib.free
+    libc.src.stdlib.malloc
+
     # string.h entrypoints
     libc.src.string.memccpy
     libc.src.string.memchr
