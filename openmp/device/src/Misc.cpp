@@ -62,8 +62,13 @@ static FnPtrTy indirectCallLookup(FnPtrTy HstPtr) {
 }
 
 /// The openmp client instance used to communicate with the server.
+#if defined(OMPTARGET_HAS_LIBC)
+[[gnu::visibility("protected")]] extern rpc::Client Client
+    asm("__llvm_rpc_client");
+#else
 [[gnu::visibility("protected"),
   gnu::weak]] rpc::Client Client asm("__llvm_rpc_client");
+#endif
 
 } // namespace impl
 } // namespace ompx
