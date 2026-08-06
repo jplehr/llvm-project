@@ -508,13 +508,6 @@ public:
     AtomicOpts = AtomicOptions(Opts);
   }
 
-  const llvm::omp::GV &getGridValue() const override {
-    // Reuse AMDGPU OpenMP defaults for the AMDGCN-flavored SPIR-V target.
-    // This is required by OpenMP GPU codegen paths (e.g. target/teams) and
-    // avoids falling back to TargetInfo's unreachable default.
-    return llvm::omp::getAMDGPUGridValues<64>();
-  }
-
   bool hasInt128Type() const override { return TargetInfo::hasInt128Type(); }
 
   // This is only needed for validating arguments passed to
