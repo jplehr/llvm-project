@@ -12,8 +12,12 @@
 // The return type should be ptr addrspace(4) (generic pointer).
 // CHECK: call spir_func align 8 addrspace(9) ptr addrspace(4) @__kmpc_alloc_shared(i64 4)
 
+// Verify the cross-team callbacks use the runtime's generic-pointer ABI.
+// CHECK: call addrspace(9) void @_omp_reduction_list_to_global_copy_func(ptr addrspace(4) {{.*}}, i32 0, ptr addrspace(4) {{.*}})
+
 // Verify the reduction runtime function is called.
 // CHECK: call spir_func addrspace(9) i32 @__kmpc_gpu_xteam_reduce_nowait(
+// CHECK: call addrspace(9) void @_omp_reduction_global_to_list_copy_func(ptr addrspace(4) {{.*}}, i32 0, ptr addrspace(4) {{.*}})
 
 // Verify __kmpc_free_shared is called.
 // CHECK: call spir_func addrspace(9) void @__kmpc_free_shared(ptr addrspace(4)
@@ -22,6 +26,9 @@
 // CHECK: define internal spir_func void @{{.*}}reduction{{.*}}func
 // CHECK: define internal spir_func void @{{.*}}shuffle_and_reduce_func
 // CHECK: define internal spir_func void @{{.*}}inter_warp_copy_func
+// CHECK: define internal void @_omp_reduction_list_to_global_copy_func(ptr addrspace(4) noundef {{.*}}, i32 noundef {{.*}}, ptr addrspace(4) noundef {{.*}})
+// CHECK: define internal void @_omp_reduction_global_to_list_copy_func(ptr addrspace(4) noundef {{.*}}, i32 noundef {{.*}}, ptr addrspace(4) noundef {{.*}})
+// CHECK: define internal void @_omp_reduction_global_to_list_reduce_func(ptr addrspace(4) noundef {{.*}}, i32 noundef {{.*}}, ptr addrspace(4) noundef {{.*}})
 
 int main() {
   int x = 0;
