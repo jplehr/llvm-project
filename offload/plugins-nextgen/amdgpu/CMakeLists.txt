@@ -8,6 +8,14 @@ target_sources(omptarget.rtl.amdgpu PRIVATE src/rtl.cpp src/ComgrAdapter.cpp)
 target_include_directories(omptarget.rtl.amdgpu PRIVATE
                            ${CMAKE_CURRENT_SOURCE_DIR}/utils)
 
+# ComgrAdapter.cpp calls dladdr() unconditionally (for diagnostic logging of
+# where the COMGR symbols were resolved from), so this plugin always needs
+# libdl. In-tree builds against a statically-linked LLVMSupport happen to
+# pull this in transitively, but standalone runtime builds against a
+# prebuilt LLVM shared library do not, and fail to link with "undefined
+# symbol: dladdr". Link it explicitly so both configurations work.
+target_link_libraries(omptarget.rtl.amdgpu PRIVATE ${CMAKE_DL_LIBS})
+
 option(LIBOMPTARGET_BUILD_AMDGPU_COMGR_SUPPORT
   "Enable COMGR-backed SPIR-V runtime JIT path in AMDGPU plugin" ON)
 option(LIBOMPTARGET_FORCE_DLOPEN_LIBCOMGR
