@@ -2122,7 +2122,7 @@ bool SPIRVInstructionSelector::selectAtomicLoad(Register ResVReg,
   unsigned OpOffset = isa<GIntrinsic>(I) ? 1 : 0;
   Register Ptr = I.getOperand(1 + OpOffset).getReg();
 
-  if (!ResType.isTypeIntOrFloat() && !ResType.isTypePtr())
+  if (!ResType.isTypeIntOrFloat() && !ResType.isPointer())
     return diagnoseUnsupported(
         I, "Lowering to SPIR-V of atomic load is only "
            "allowed for integer, floating point or pointer types");
@@ -2145,7 +2145,7 @@ bool SPIRVInstructionSelector::selectAtomicLoad(Register ResVReg,
 
   MachineIRBuilder MIRBuilder(I);
 
-  if (ResType.isTypePtr()) {
+  if (ResType.isPointer()) {
     if (!STI.isPhysicalSPIRV())
       return diagnoseUnsupported(
           I, "Lowering to SPIR-V of atomic load is only "
@@ -2280,9 +2280,9 @@ bool SPIRVInstructionSelector::selectAtomicStore(MachineInstr &I) const {
       PtrType->getOpcode() == SPIRV::OpTypeUntypedPointerKHR)
     PointeeType = GR.getSPIRVTypeForVReg(StoreVal);
   if (!PointeeType)
-    return diagnoseUnsupported(I,
-                               "Lowering to SPIR-V of atomic store is only "
-                               "allowed for integer or floating point types");
+    return diagnoseUnsupported(
+        I, "Lowering to SPIR-V of atomic store is only allowed for integer, "
+           "floating point or pointer types");
 
   assert(I.getNumMemOperands());
   const MachineMemOperand &MemOp = **I.memoperands_begin();
@@ -2301,7 +2301,7 @@ bool SPIRVInstructionSelector::selectAtomicStore(MachineInstr &I) const {
   Register MemSemReg = buildI32Constant(MemSem | StorageClass, I);
   MachineIRBuilder MIRBuilder(I);
 
-  if (PointeeType.isTypePtr()) {
+  if (PointeeType.isPointer()) {
     if (!STI.isPhysicalSPIRV())
       return diagnoseUnsupported(
           I, "Lowering to SPIR-V of atomic store is only "
@@ -2328,9 +2328,9 @@ bool SPIRVInstructionSelector::selectAtomicStore(MachineInstr &I) const {
   }
 
   if (!PointeeType.isTypeIntOrFloat())
-    return diagnoseUnsupported(I,
-                               "Lowering to SPIR-V of atomic store is only "
-                               "allowed for integer or floating point types");
+    return diagnoseUnsupported(
+        I, "Lowering to SPIR-V of atomic store is only allowed for integer, "
+           "floating point or pointer types");
 
   auto AtomicStore = MIRBuilder.buildInstr(SPIRV::OpAtomicStore)
                          .addUse(Ptr)
@@ -2593,7 +2593,7 @@ bool SPIRVInstructionSelector::selectAtomicRMW(Register ResVReg,
     ValueReg = TmpReg;
   }
 
-  if (ResType.isTypePtr()) {
+  if (ResType.isPointer()) {
     if (NewOpcode != SPIRV::OpAtomicExchange)
       return diagnoseUnsupported(
           I, "Lowering to SPIR-V of this atomic operation is not "
